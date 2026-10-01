@@ -4,7 +4,7 @@ import { getCatalogue, getOrder } from '../api/client'
 import { ServiceIcon } from '../lib/icons.jsx'
 import { loadOrder } from '../lib/order'
 import logo from '../assets/farhat-logo.png'
-import hero from '../assets/hero.png'
+import { serviceImage } from '../lib/images'
 
 /**
  * What a customer sees on opening.
@@ -156,17 +156,6 @@ export default function Landing() {
             </div>
           )}
           </div>
-
-          {/* Printing is bought by eye. Hidden on a phone, where it
-              would push the search below the fold — the thing a
-              customer came to use should not wait behind a picture. */}
-          <div className="hidden lg:block lg:w-[32%] shrink-0">
-            <img
-              src={hero}
-              alt=""
-              className="w-full h-auto max-h-56 object-contain"
-            />
-          </div>
         </div>
       </header>
 
@@ -207,16 +196,16 @@ export default function Landing() {
                          focus:outline-none focus-visible:ring-2 focus-visible:ring-ink
                          transition-all"
             >
-              {service.image ? (
+              {serviceImage(service.name) ? (
                 <img
-                  src={service.image}
+                  src={serviceImage(service.name)}
                   alt=""
+                  loading="lazy"
                   className="aspect-[4/3] w-full object-cover"
                 />
               ) : (
                 <div className="aspect-[4/3] w-full bg-substrate" />
               )}
-
               <div className="flex-1 flex flex-col px-3 py-3">
                 <p className="text-[0.95rem] font-semibold leading-tight">
                   {service.name}
