@@ -32,4 +32,27 @@ export const startPayment = (orderNumber, token, callbackUrl) =>
     callback_url: callbackUrl,
   })
 
+export const uploadFile = (orderNumber, token, file) => {
+  const form = new FormData()
+  form.append('token', token)
+  form.append('file', file)
+  // A bare axios call rather than the shared client. That one sets a
+  // JSON content type on every request, and a multipart body sent as
+  // JSON arrives at the server with no fields in it — no token, so the
+  // order is not found, and the error says nothing about the cause.
+  return axios.post(
+    `${client.defaults.baseURL}/api/v1/storefront/orders/${orderNumber}/file/`,
+    form,
+  )
+}
+
+export const getFile = (orderNumber, token) =>
+  client.get(`/api/v1/storefront/orders/${orderNumber}/file/`, { params: { token } })
+
+export const acceptWarning = (orderNumber, token) =>
+  client.patch(`/api/v1/storefront/orders/${orderNumber}/file/`, {
+    token,
+    warning_accepted: true,
+  })
+
 export default client
