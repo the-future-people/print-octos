@@ -7,7 +7,7 @@ import { useRef, useState } from 'react'
  * falls back to a plain button when disabled, so nothing is unreachable
  * for someone who cannot drag.
  */
-export default function SwipeToPay({ label, onConfirm, disabled, busy }) {
+export default function SwipeToPay({ label, amount, onConfirm, disabled, busy }) {
   const track = useRef(null)
   const [x, setX] = useState(0)
   const [dragging, setDragging] = useState(false)
@@ -52,10 +52,21 @@ export default function SwipeToPay({ label, onConfirm, disabled, busy }) {
                  overflow-hidden"
       style={{ height: KNOB + 8 }}
     >
-      <span className="absolute inset-0 flex items-center justify-center
-                       text-white text-sm font-semibold pointer-events-none"
+      <span className="absolute inset-0 flex items-center justify-center gap-1.5
+                       pointer-events-none"
             style={{ opacity: 1 - x / (limit() || 1) }}>
-        {busy ? 'One moment…' : label}
+        {busy ? (
+          <span className="text-white text-sm font-semibold">One moment…</span>
+        ) : (
+          <>
+            <span className="text-white text-sm font-semibold">{label}</span>
+            {amount && (
+              <span className="text-gold text-[1.05rem] font-extrabold tabular-nums">
+                GHS {amount}
+              </span>
+            )}
+          </>
+        )}
       </span>
 
       <button

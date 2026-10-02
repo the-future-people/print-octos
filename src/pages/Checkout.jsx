@@ -380,18 +380,17 @@ export default function Checkout() {
       </main>
 
       <div className="fixed bottom-0 inset-x-0 bg-white border-t border-rule">
-        <div className="max-w-xl mx-auto px-5 py-3 flex items-center gap-3">
-          <div className="min-w-0">
-            {Number(order.discount_amount) > 0 && (
-              <p className="text-[0.7rem] text-body line-through tabular-nums">
-                GHS {order.full_total}
-              </p>
-            )}
-            <p className="text-xl font-bold tabular-nums">GHS {order.total}</p>
-          </div>
-          <div className="ml-auto w-[58%] max-w-[260px]">
+        <div className="max-w-xl mx-auto px-5 py-3 flex items-center gap-3 relative">
+          {Number(order.discount_amount) > 0 && (
+            <p className="absolute -top-6 inset-x-0 text-center text-xs text-body">
+              <span className="line-through">GHS {order.full_total}</span>
+              {' · '}{order.discount_reason}
+            </p>
+          )}
+          <div className="w-full">
             <SwipeToPay
-              label={busy ? 'One moment…' : 'Swipe to pay'}
+              label="Swipe to pay"
+              amount={order.total}
               onConfirm={handlePay}
               disabled={!canPay || busy}
               busy={busy}
