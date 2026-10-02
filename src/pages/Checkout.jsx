@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { getOrder, identify, setCode, startPayment } from '../api/client'
 import { loadOrder } from '../lib/order'
 import logo from '../assets/farhat-logo.png'
+import { getOrder, getFile, identify, setCode, startPayment } from '../api/client'
+import SwipeToPay from '../components/SwipeToPay.jsx'
 
 /**
  * PLACEHOLDER. Nothing computes this yet.
@@ -47,6 +48,13 @@ export default function Checkout() {
   const { data: order, isLoading, isError, refetch } = useQuery({
     queryKey: ['order', saved?.order_number],
     queryFn: () => getOrder(saved.order_number, saved.access_token).then(r => r.data),
+    enabled: !!saved,
+    retry: false,
+  })
+
+  const { data: artwork } = useQuery({
+    queryKey: ['order-file', saved?.order_number],
+    queryFn: () => getFile(saved.order_number, saved.access_token).then(r => r.data),
     enabled: !!saved,
     retry: false,
   })
@@ -205,11 +213,29 @@ export default function Checkout() {
             </div>
           )}
 
-          <div className="px-4 py-3 flex items-center justify-between gap-3">
-            <p className="text-[0.95rem] font-semibold">Total</p>
-            <p className="text-lg font-bold tabular-nums">GHS {order.total}</p>
-          </div>
         </section>
+
+        {/* The customer should be able to see their artwork is attached
+            before paying for it. Without this the file is something
+            they did on a previous screen and have to take on trust. */}
+        {artwork && (
+          <div className="mt-3 flex items-center gap-3 rounded-xl border border-rule
+                          px-4 py-3">
+            <span className={`w-2 h-2 rounded-full shrink-0 ${
+              artwork.verdict === 'fine' ? 'bg-emerald-500'
+              : artwork.verdict === 'warn' ? 'bg-amber-500'
+              : 'bg-farhat'
+            }`} aria-hidden="true" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium truncate">{artwork.filename}</p>
+              <p className="text-xs text-body">
+                {artwork.verdict === 'fine' ? 'Your artwork is attached'
+                 : artwork.verdict === 'warn' ? 'Attached, with a note you accepted'
+                 : 'We can’t print this file'}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* ── Who ───────────────────────────────────────────────── */}
         <h2 className="mt-8 text-base font-semibold">How do we reach you?</h2>
@@ -363,16 +389,14 @@ export default function Checkout() {
             )}
             <p className="text-xl font-bold tabular-nums">GHS {order.total}</p>
           </div>
-          <button
-            onClick={handlePay}
-            disabled={!canPay || busy}
-            className="ml-auto shrink-0 px-6 py-3 rounded-lg bg-farhat text-white
-                       text-[0.95rem] font-semibold disabled:opacity-40
-                       hover:opacity-90 transition-opacity focus:outline-none
-                       focus-visible:ring-2 focus-visible:ring-ink"
-          >
-            {busy ? 'One moment…' : 'Pay now'}
-          </button>
+          <div className="ml-auto w-[58%] max-w-[260px]">
+            <SwipeToPay
+              label={busy ? 'One moment…' : 'Swipe to pay'}
+              onConfirm={handlePay}
+              disabled={!canPay || busy}
+              busy={busy}
+            />
+          </div>
         </div>
       </div>
     </div>

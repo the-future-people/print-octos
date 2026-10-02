@@ -36,9 +36,15 @@ export default function ArtworkUpload({ order, result, onResult }) {
 
   async function accept() {
     setBusy(true)
+    setProblem('')
     try {
       const { data } = await acceptWarning(order.order_number, order.access_token)
       onResult(data)
+    } catch (err) {
+      setProblem(
+        err.response?.data?.detail ||
+        'We couldn’t record that. Try again in a moment.',
+      )
     } finally {
       setBusy(false)
     }
