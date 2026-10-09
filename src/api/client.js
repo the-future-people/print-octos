@@ -32,7 +32,7 @@ export const startPayment = (orderNumber, token, callbackUrl) =>
     callback_url: callbackUrl,
   })
 
-export const uploadFile = (orderNumber, token, file) => {
+export const uploadFile = (orderNumber, token, file, onProgress) => {
   const form = new FormData()
   form.append('token', token)
   form.append('file', file)
@@ -43,6 +43,15 @@ export const uploadFile = (orderNumber, token, file) => {
   return axios.post(
     `${client.defaults.baseURL}/api/v1/storefront/orders/${orderNumber}/file/`,
     form,
+    {
+      // Real progress, not a guess. On a slow connection most of the
+      // wait is the bytes leaving the phone, and that is worth showing
+      // rather than pretending.
+      onUploadProgress: event => {
+        if (!onProgress || !event.total) return
+        onProgress(Math.round((event.loaded / event.total) * 100))
+      },
+    },
   )
 }
 
