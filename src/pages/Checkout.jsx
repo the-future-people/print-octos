@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { loadOrder } from '../lib/order'
 import logo from '../assets/farhat-logo.png'
-import { getOrder, getFile, identify, setCode, startPayment } from '../api/client'
 import SwipeToPay from '../components/SwipeToPay.jsx'
 import BranchChoice from '../components/BranchChoice.jsx'
+import { getOrder, getFile, identify, setCode, startPayment, updateOrder } from '../api/client'
+
 
 
 /**
@@ -18,9 +19,9 @@ import BranchChoice from '../components/BranchChoice.jsx'
  * code belongs to a person, so it cannot be offered before we know who
  * they are, and nothing can be paid for until both are settled.
  *
- * No promised date. Routing is not built, so any date shown here would
- * be invented — and a date a customer plans around is worse invented
- * than absent.
+ * The ready time is computed from the floor — the service's own
+ * timings, what is queued ahead, and the branch's trading hours — and
+ * the customer picks which branch on that basis.
  */
 export default function Checkout() {
   const navigate = useNavigate()
@@ -142,6 +143,25 @@ export default function Checkout() {
         'We couldn’t start the payment. Try again in a moment.',
       )
       setBusy(false)
+    }
+  }
+
+    async function handleChooseBranch(option) {
+    // Kept locally so the card highlights straight away, and sent to
+    // the server because the local pick is lost on refresh — and the
+    // job has to know where it is being made.
+    setBranch(option)
+    setProblem('')
+    try {
+      await updateOrder(saved.order_number, saved.access_token, {
+        branch: option.branch_id,
+      })
+    } catch (err) {
+      setBranch(null)
+      setProblem(
+        err.response?.data?.detail ||
+        'We couldn’t set that branch. Try again in a moment.',
+      )
     }
   }
 
@@ -341,7 +361,7 @@ export default function Checkout() {
             <BranchChoice
               order={saved}
               chosen={branch?.branch_id}
-              onChoose={setBranch}
+              onChoose={handleChooseBranch}
             />
           </>
         )}
