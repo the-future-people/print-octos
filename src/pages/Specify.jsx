@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { getCatalogue, createOrder, updateOrder, getFile,getOrder} from '../api/client'
+import { getCatalogue, createOrder, updateOrder, getFile, getOrder } from '../api/client'
 import { loadOrder, saveOrder } from '../lib/order'
 import { serviceImage } from '../lib/images'
 import ArtworkUpload from '../components/ArtworkUpload.jsx'
@@ -10,10 +10,10 @@ import logo from '../assets/farhat-logo.png'
 /**
  * What the customer is ordering, and what it costs.
  *
- * Artwork first, then the size. Most people start from a file they
- * already have, and asking for dimensions before seeing it puts the
- * abstract question first. The resolution check still needs both, so
- * it waits quietly until the size is there and re-runs when it moves.
+ * Size first, then the artwork. An order can hold a banner and flyers
+ * at once, so a file belongs to a line rather than to the order — and
+ * the line does not exist until there is something to price. The size
+ * is what brings it into being.
  *
  * The photograph sits beside the inputs rather than on a screen of its
  * own. Seeing what you are buying while you size it is the cheapest
@@ -29,6 +29,13 @@ import logo from '../assets/farhat-logo.png'
 export default function Specify() {
   const { serviceId } = useParams()
   const navigate = useNavigate()
+  const [params] = useSearchParams()
+
+  // Which line this page is editing. Absent from the catalogue, which
+  // means a new item — two banners at different sizes are two lines,
+  // not one overwritten twice. Present when the cart sends you back to
+  // something you already configured.
+  const editingId = params.get('line') || null
 
   const { data: services = [], isLoading: loadingCatalogue } = useQuery({
     queryKey: ['catalogue'],
@@ -45,6 +52,27 @@ export default function Specify() {
   const [problem, setProblem] = useState('')
   const [fileResult, setFileResult] = useState(null)
 
+  // The id the server gave this line on its first price. Held so later
+  // repricings update it rather than adding another.
+  const [workingId, setWorkingId] = useState(null)
+
+  // What else is already on the order — a banner configured earlier,
+  // say. The PATCH replaces the whole list, so these have to travel
+  // with every reprice or they are deleted.
+  const [otherLines, setOtherLines] = useState([])
+
+  // Whether the order has been read back from the server yet. Pricing
+  // before it lands would send a list missing everything already in
+  // the cart, and the PATCH would delete those items.
+  const [loaded, setLoaded] = useState(false)
+
+  // A copy of otherLines the pricing effect can read without listing it
+  // as a dependency. Listing it restarts the effect every time the
+  // array is rebuilt — a new array is a new value even with identical
+  // contents — and the restart cancels the timer before it fires.
+  const otherLinesRef = useRef([])
+  useEffect(() => { otherLinesRef.current = otherLines }, [otherLines])
+
   // The spec's own fields, minus quantity — that has its own control
   // below, and one number held in two places is how a job gets charged
   // for a single page when the customer asked for ten.
@@ -56,8 +84,7 @@ export default function Specify() {
   const byArea = service?.unit === 'PER_SQFT' || service?.unit === 'PER_SQCM'
 
   // Starting values from the template. The rehydrate below overwrites
-  // these when the order already has a line — a customer coming back
-  // should see what they typed, not the blank form again.
+  // these when the order already has this line.
   useEffect(() => {
     if (!service) return
     setValues(
@@ -69,6 +96,8 @@ export default function Specify() {
     )
     const q = (service.spec_template || []).find(f => f.key === 'quantity')
     setQuantity(q?.default ?? 1)
+    setWorkingId(null)
+    setQuote(null)
   }, [service])
 
   useEffect(() => {
@@ -82,54 +111,84 @@ export default function Specify() {
   }, [order])
 
   // Everything the customer did is on the server. Coming back to this
-  // page with an order already in hand should show their work, not a
-  // blank form — the file they sent, the size they typed. Without this
-  // a step backwards looks like a step lost.
+  // page should show their work, not a blank form.
   useEffect(() => {
     if (!order || !service) return
+    setLoaded(false)
+    setFileResult(null)
 
     getOrder(order.order_number, order.access_token)
       .then(({ data }) => {
-        const line = (data.line_items || []).find(
-          l => String(l.service) === String(service.id),
-        )
-        if (!line) return
+        const all = data.line_items || []
 
-        setValues(line.specifications || {})
-        setQuantity(line.quantity || 1)
+        // Editing a line the cart sent us to, or starting a new one.
+        // Without an id every banner would be the same banner.
+        const mine = editingId ? all.find(l => l.id === editingId) : null
+
+        setOtherLines(all.filter(l => l.id !== mine?.id))
+        otherLinesRef.current = all.filter(l => l.id !== mine?.id)
+
+        if (!mine) return
+
+        setValues(mine.specifications || {})
+        setQuantity(mine.quantity || 1)
+        setWorkingId(mine.id)
         setQuote(data)
       })
       .catch(() => {})
-
-    getFile(order.order_number, order.access_token)
-      .then(({ data }) => setFileResult(data))
-      .catch(() => {})
-  }, [order, service])
+      .finally(() => setLoaded(true))
+  }, [order, service, editingId])
 
   // Priced after a pause rather than on every keystroke.
   useEffect(() => {
-    if (!order || !service) return
+    if (!order || !service || !loaded) return
+
     const ready = fields.every(f => !f.required || values[f.key] !== '')
     if (!ready) return
+
+    const currentId = editingId || workingId
 
     const timer = setTimeout(() => {
       setPricing(true)
       setProblem('')
+
       updateOrder(order.order_number, order.access_token, {
-        line_items: [{
-          service: service.id,
-          quantity: Number(quantity) || 1,
-          specifications: values,
-        }],
+        // Every line, not just this one. The list replaces what is on
+        // the order, so leaving the others out would delete them.
+        line_items: [
+          ...otherLinesRef.current.map(l => ({
+            id: l.id,
+            service: l.service,
+            quantity: l.quantity,
+            specifications: l.specifications,
+          })),
+          {
+            ...(currentId ? { id: currentId } : {}),
+            service: service.id,
+            quantity: Number(quantity) || 1,
+            specifications: values,
+          },
+        ],
       })
         .then(r => {
           setQuote(r.data)
-          // The size has moved, so the verdict may have. A file that
-          // was fine on a small print is refused across six feet.
-          if (fileResult) {
-            getFile(order.order_number, order.access_token)
-              .then(f => setFileResult(f.data))
-              .catch(() => {})
+
+          if (!currentId) {
+            const known = otherLinesRef.current.map(l => l.id)
+            const added = (r.data.line_items || []).find(
+              l => !known.includes(l.id),
+            )
+            if (added) {
+              setWorkingId(added.id)
+              // Into the address bar, so a reload — or a resize, which
+              // reloads in dev — comes back to this same item rather
+              // than starting another. Replace, not push, so Back
+              // still goes to the catalogue.
+              navigate(
+                `/service/${service.id}?line=${added.id}`,
+                { replace: true },
+              )
+            }
           }
         })
         .catch(err => {
@@ -143,9 +202,22 @@ export default function Specify() {
     }, 400)
 
     return () => clearTimeout(timer)
-  }, [order, service, values, quantity, fields])
+  }, [order, service, values, quantity, fields, editingId, workingId, loaded])
 
-  const line = quote?.line_items?.[0]
+  // The line this page is working on.
+  const line = (quote?.line_items || []).find(
+    l => l.id === (editingId || workingId),
+  )
+
+  // The file belongs to a line, so it can only be fetched once the
+  // line exists — and re-fetched when the size moves, since a file
+  // fine on a small print is refused across six feet.
+  useEffect(() => {
+    if (!order || !line?.id) return
+    getFile(order.order_number, order.access_token, line.id)
+      .then(({ data }) => setFileResult(data))
+      .catch(() => setFileResult(null))
+  }, [order, line?.id, line?.total])
 
   function setField(key, raw) {
     // Raw while typing. Clamping on every keystroke turns the first
@@ -155,15 +227,13 @@ export default function Specify() {
 
   function clampField(field, raw) {
     // An empty field stays empty. Filling it with the minimum on blur
-    // would put a number there the customer never chose — which is the
-    // whole reason the defaults were removed.
+    // would put a number there the customer never chose.
     if (raw === '' || raw === null) {
       setValues(v => ({ ...v, [field.key]: '' }))
       return
     }
     const min = field.min ?? 1
-    const n = Math.max(min, Number(raw) || min)
-    setValues(v => ({ ...v, [field.key]: n }))
+    setValues(v => ({ ...v, [field.key]: Math.max(min, Number(raw) || min) }))
   }
 
   if (loadingCatalogue) {
@@ -187,23 +257,23 @@ export default function Specify() {
   const photo = serviceImage(service.name)
   const needsFile = service.requires_file_upload
 
-  const canContinue =
-    !!quote && Number(quote.total) > 0 && artworkReady(service, fileResult)
-
-  // The button says what is missing rather than sitting mute and grey.
-  // A disabled control that explains nothing is a dead end.
   const sizeMissing = fields.some(
     f => f.required && (values[f.key] === '' || values[f.key] == null),
   )
 
+  const canContinue =
+    !!line && Number(line.total) > 0 && artworkReady(service, fileResult)
+
+  // The button says what is missing rather than sitting mute and grey.
+  // A disabled control that explains nothing is a dead end.
   const continueLabel =
     sizeMissing ? 'Enter the size to continue'
-    : !quote ? 'Continue'
+    : !line ? 'Working out the price…'
     : needsFile && !fileResult ? 'Upload artwork to continue'
     : needsFile && fileResult?.verdict === 'refuse' ? 'Send different artwork'
     : needsFile && fileResult?.verdict === 'warn' && !fileResult.warning_accepted
       ? 'Accept the note to continue'
-    : 'Continue'
+    : 'Checkout'
 
   return (
     <div className="min-h-screen bg-white text-ink">
@@ -229,10 +299,6 @@ export default function Specify() {
 
         <div className="mt-6 sm:flex sm:gap-5 lg:gap-8">
 
-          {/* The photo shrinks as the screen does. On a phone it is a
-              thumbnail beside the title: the customer came to order
-              something, and a full-width picture would push the whole
-              form below the fold to confirm what they just tapped. */}
           <div className="flex gap-3 sm:block sm:w-[150px] lg:w-[200px] shrink-0">
             {photo ? (
               <img src={photo} alt={service.name}
@@ -260,17 +326,7 @@ export default function Specify() {
               </p>
             </div>
 
-            {/* ── The artwork, first ───────────────────────────── */}
-
-            {needsFile && (
-              <ArtworkUpload
-                order={order}
-                result={fileResult}
-                onResult={setFileResult}
-              />
-            )}
-
-            {/* ── Then the size ────────────────────────────────── */}
+            {/* ── The size, first ──────────────────────────────── */}
 
             <div className="mt-5 pt-5 border-t border-rule">
               <p className="flex items-center gap-2 text-[0.95rem] font-semibold">
@@ -345,9 +401,6 @@ export default function Specify() {
                 </div>
               </div>
 
-              {/* Only where the size is the customer's own number. A
-                  business card has a size we set, and warning about it
-                  would be noise. */}
               {byArea && (
                 <p className="mt-3 text-xs leading-relaxed text-body">
                   Printed to the exact size you enter — please check your
@@ -355,6 +408,28 @@ export default function Specify() {
                 </p>
               )}
             </div>
+
+            {/* ── Then the artwork ─────────────────────────────── */}
+
+            {needsFile && line?.id && (
+              <ArtworkUpload
+                order={order}
+                lineId={line.id}
+                result={fileResult}
+                onResult={setFileResult}
+              />
+            )}
+
+            {needsFile && !line?.id && (
+              <div className="mt-5 pt-5 border-t border-rule">
+                <p className="text-[0.95rem] font-semibold text-body/60">
+                  Your artwork
+                </p>
+                <p className="mt-1 text-xs text-body/60">
+                  Set the size above and we’ll check your file against it.
+                </p>
+              </div>
+            )}
 
             {problem && (
               <p className="mt-4 text-sm text-farhat">{problem}</p>
@@ -370,39 +445,58 @@ export default function Specify() {
 
             {/* ── What it comes to ─────────────────────────────── */}
 
-            <div className="mt-5 flex items-center justify-between gap-3 rounded-xl
-                            border border-rule bg-substrate/40 px-4 py-3">
-              <div className="min-w-0">
-                <p className="text-[0.7rem] text-body">
-                  {line
-                    ? `${describeLine(line)} · ${line.quantity} piece${line.quantity === 1 ? '' : 's'}`
-                    : 'Set a size to see the price'}
-                </p>
-                <p className="text-xl font-extrabold tabular-nums transition-opacity"
-                   style={{ opacity: pricing ? 0.45 : 1 }}>
-                  {quote ? `GHS ${quote.total}` : '—'}
-                </p>
+            <div className="mt-5 rounded-xl border border-rule bg-substrate/40
+                            px-4 py-3">
+              <div className="sm:flex sm:items-center sm:justify-between sm:gap-4">
+                <div className="min-w-0">
+                  <p className="text-[0.7rem] text-body">
+                    {line
+                      ? `${describeLine(line)} · ${line.quantity} piece${line.quantity === 1 ? '' : 's'}`
+                      : 'Set a size to see the price'}
+                  </p>
+                  <p className="text-xl font-extrabold tabular-nums transition-opacity"
+                     style={{ opacity: pricing ? 0.45 : 1 }}>
+                    {/* This item, not the order. With a banner already
+                        in the cart, the order total would price the
+                        flyers at both. */}
+                    {line ? `GHS ${line.total}` : '—'}
+                  </p>
+                </div>
+
+                <div className="mt-3 sm:mt-0 flex items-center gap-3 sm:gap-4 shrink-0">
+                  {canContinue && (
+                    <button
+                      onClick={() => navigate('/')}
+                      className="text-xs sm:text-sm font-semibold underline
+                                 underline-offset-4 decoration-rule hover:decoration-ink
+                                 transition-colors"
+                    >
+                      Add another item
+                    </button>
+                  )}
+                  <button
+                    disabled={!canContinue}
+                    onClick={() => navigate('/checkout')}
+                    className={`flex-1 sm:flex-none inline-flex items-center
+                                justify-center gap-2 px-5 py-2.5 rounded-lg text-sm
+                                font-semibold transition-colors focus:outline-none
+                                focus-visible:ring-2 focus-visible:ring-ink
+                                ${canContinue
+                                  ? 'bg-farhat text-white hover:opacity-90'
+                                  : 'bg-substrate text-body/70 cursor-not-allowed'}`}
+                  >
+                    {continueLabel}
+                    {canContinue && (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                           strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+                           className="w-4 h-4" aria-hidden="true">
+                        <path d="M5 12h13" />
+                        <path d="M13 6l6 6-6 6" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
-              <button
-                disabled={!canContinue}
-                onClick={() => navigate('/checkout')}
-                className={`shrink-0 inline-flex items-center gap-2 px-5 py-2.5
-                            rounded-lg text-sm font-semibold transition-colors
-                            focus:outline-none focus-visible:ring-2 focus-visible:ring-ink
-                            ${canContinue
-                              ? 'bg-farhat text-white hover:opacity-90'
-                              : 'bg-substrate text-body/70 cursor-not-allowed'}`}
-              >
-                {continueLabel}
-                {canContinue && (
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                       strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
-                       className="w-4 h-4" aria-hidden="true">
-                    <path d="M5 12h13" />
-                    <path d="M13 6l6 6-6 6" />
-                  </svg>
-                )}
-              </button>
             </div>
 
           </div>

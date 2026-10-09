@@ -63,7 +63,7 @@ const VERDICTS = {
   },
 }
 
-export default function ArtworkUpload({ order, result, onResult }) {
+export default function ArtworkUpload({ order, lineId, result, onResult }) {
   const input = useRef(null)
   const [chosen, setChosen] = useState(null)
   const [stage, setStage] = useState(null)
@@ -90,7 +90,7 @@ export default function ArtworkUpload({ order, result, onResult }) {
 
     try {
       const { data } = await uploadFile(
-        order.order_number, order.access_token, file,
+        order.order_number, order.access_token, file, lineId,
         percent => {
           setProgress(percent)
           if (percent >= 100) setStage('read')
@@ -111,7 +111,9 @@ export default function ArtworkUpload({ order, result, onResult }) {
   async function accept() {
     setProblem('')
     try {
-      const { data } = await acceptWarning(order.order_number, order.access_token)
+      const { data } = await acceptWarning(
+        order.order_number, order.access_token, lineId,
+      )
       onResult(data)
     } catch (err) {
       setProblem(

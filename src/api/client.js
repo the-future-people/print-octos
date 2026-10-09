@@ -32,10 +32,13 @@ export const startPayment = (orderNumber, token, callbackUrl) =>
     callback_url: callbackUrl,
   })
 
-export const uploadFile = (orderNumber, token, file, onProgress) => {
+export const uploadFile = (orderNumber, token, file, lineId, onProgress) => {
   const form = new FormData()
   form.append('token', token)
   form.append('file', file)
+  // Which item this artwork is for. An order can hold a banner, flyers
+  // and programmes at once, and the banner's file is not the flyer's.
+  if (lineId) form.append('line_id', lineId)
   // A bare axios call rather than the shared client. That one sets a
   // JSON content type on every request, and a multipart body sent as
   // JSON arrives at the server with no fields in it — no token, so the
@@ -55,12 +58,15 @@ export const uploadFile = (orderNumber, token, file, onProgress) => {
   )
 }
 
-export const getFile = (orderNumber, token) =>
-  client.get(`/api/v1/storefront/orders/${orderNumber}/file/`, { params: { token } })
+export const getFile = (orderNumber, token, lineId) =>
+  client.get(`/api/v1/storefront/orders/${orderNumber}/file/`, {
+    params: { token, ...(lineId ? { line_id: lineId } : {}) },
+  })
 
-export const acceptWarning = (orderNumber, token) =>
+export const acceptWarning = (orderNumber, token, lineId) =>
   client.patch(`/api/v1/storefront/orders/${orderNumber}/file/`, {
     token,
+    line_id: lineId,
     warning_accepted: true,
   })
 
