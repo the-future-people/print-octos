@@ -55,4 +55,15 @@ export const acceptWarning = (orderNumber, token) =>
     warning_accepted: true,
   })
 
+export const getBranchOptions = (orderNumber, token, location) =>
+  client.get(`/api/v1/storefront/orders/${orderNumber}/branches/`, {
+    params: {
+      token,
+      ...(location ? {
+        latitude: location.latitude,
+        longitude: location.longitude,
+      } : {}),
+    },
+  })
+
 export default client

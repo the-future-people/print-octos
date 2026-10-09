@@ -68,7 +68,15 @@ export default function ArtworkUpload({ order, result, onResult }) {
         type="file"
         accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.webp"
         className="hidden"
-        onChange={e => send(e.target.files?.[0])}
+        onChange={e => {
+          const file = e.target.files?.[0]
+          // Cleared straight away, so choosing the same file again
+          // still counts as a change. Without this, a customer who
+          // re-exports their artwork under the same name picks it and
+          // nothing happens.
+          e.target.value = ''
+          send(file)
+        }}
       />
 
       {!result && (

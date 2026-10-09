@@ -5,28 +5,9 @@ import { loadOrder } from '../lib/order'
 import logo from '../assets/farhat-logo.png'
 import { getOrder, getFile, identify, setCode, startPayment } from '../api/client'
 import SwipeToPay from '../components/SwipeToPay.jsx'
+import BranchChoice from '../components/BranchChoice.jsx'
 
-/**
- * PLACEHOLDER. Nothing computes this yet.
- *
- * A real estimate needs a turnaround figure per service and the floor's
- * current load — routing and capacity are not built. This exists so the
- * screen can be judged as it will look, and must be replaced before any
- * customer sees it: a time someone plans their day around is the worst
- * thing to invent.
- */
-function estimatedReady() {
-  const minutes = 150
-  const at = new Date(Date.now() + minutes * 60_000)
-  const hours = Math.floor(minutes / 60)
-  const rest = minutes % 60
-  return {
-    duration: rest
-      ? `${hours} hour${hours === 1 ? '' : 's'} ${rest} minutes`
-      : `${hours} hour${hours === 1 ? '' : 's'}`,
-    clock: at.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true }),
-  }
-}
+
 /**
  * The last screen before paying.
  *
@@ -66,6 +47,7 @@ export default function Checkout() {
   const [issuedCode, setIssuedCode] = useState(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState('')
+  const [branch, setBranch] = useState(null)
 
   useEffect(() => {
     document.title = 'Checkout — Farhat Printing Press'
@@ -163,9 +145,11 @@ export default function Checkout() {
     }
   }
 
-  const ready = estimatedReady()
   const identified = who && !who.code_required
-  const canPay = identified && Number(order.total) > 0
+  // A branch has to be chosen before paying. Without one the job has
+  // nowhere to be made, and the money would be taken for work no floor
+  // has agreed to.
+  const canPay = identified && branch && Number(order.total) > 0
 
   return (
     <div className="min-h-screen bg-white text-ink">
@@ -243,20 +227,6 @@ export default function Checkout() {
           We’ll text you the moment it’s ready.
         </p>
 
-        <div className="mt-3 flex items-center gap-3 rounded-lg bg-substrate px-3.5 py-3">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"
-               strokeLinecap="round" strokeLinejoin="round"
-               className="w-5 h-5 shrink-0" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M12 7v5l3 2" />
-          </svg>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold">Ready in about {ready.duration}</p>
-            <p className="mt-0.5 text-xs text-body">
-              That’s around {ready.clock} today
-            </p>
-          </div>
-        </div>
 
         <div className="mt-3 grid grid-cols-2 gap-3">
           <label className="block">
@@ -363,13 +333,16 @@ export default function Checkout() {
 
         {identified && (
           <>
-            <h2 className="mt-8 text-base font-semibold">Collection</h2>
-            <div className="mt-3 rounded-xl border border-rule px-4 py-3.5">
-              <p className="text-[0.95rem] font-medium">Westland branch</p>
-              <p className="mt-1 text-sm text-body">
-                We’ll text you the moment it’s ready to collect.
-              </p>
-            </div>
+            <h2 className="mt-8 text-base font-semibold">Where and when</h2>
+            <p className="mt-1 text-sm text-body">
+              Pick whichever suits you. We’ll text you when it’s ready to
+              collect.
+            </p>
+            <BranchChoice
+              order={saved}
+              chosen={branch?.branch_id}
+              onChoose={setBranch}
+            />
           </>
         )}
 
