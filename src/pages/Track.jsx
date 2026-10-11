@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { getOrder } from '../api/client'
 import { serviceImage } from '../lib/images'
 import Header from '../components/Header.jsx'
 import CollectionMap from '../components/CollectionMap.jsx'
