@@ -1,90 +1,36 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { getOrder, findOrder } from '../api/client'
 import { serviceImage } from '../lib/images'
 import Header from '../components/Header.jsx'
 import CollectionMap from '../components/CollectionMap.jsx'
-import { getOrder, findOrder } from '../api/client'
 
 /**
- * Where an order has got to.
+ * An order, as a record of it.
+ *
+ * Not a status page with the order attached — a record of what was
+ * bought, what was paid, and where it is going, with the progress
+ * alongside. That is what a customer opens this for: they know roughly
+ * where it is, and they want to check what they ordered and when it
+ * will be there.
  *
  * Reached from the link in the text message, which carries the order
  * number and its token. There are no accounts here, so the token is
- * what proves the order is yours — the number alone is sequential and
- * would let anyone read anyone's.
+ * what proves the order is yours — the number alone runs in sequence
+ * and would let anyone read anyone's.
  *
- * The stages run down rather than across because each one has
- * something to say. A horizontal bar can carry five words; this can
- * carry a line explaining what is happening and when it happened, and
- * a customer watching their banner wants both.
- *
- * The words are the customer's, not the floor's. Quality check folds
- * into finishing: naming it invites the question of what might be
- * wrong with theirs, and the answer is almost always nothing.
+ * The stages are the customer's words, not the floor's. Quality check
+ * folds into finishing: naming it invites the question of what might
+ * be wrong with theirs, and the answer is almost always nothing.
  */
 
 const STAGES = [
-  {
-    key: 'paid',
-    label: 'Paid',
-    note: 'We have your order and your artwork',
-    icon: (
-      <>
-        <rect x="2.5" y="6" width="19" height="12" rx="2" />
-        <circle cx="12" cy="12" r="2.5" />
-      </>
-    ),
-  },
-  {
-    key: 'inspecting',
-    label: 'Inspecting',
-    note: 'Checked over before it goes on',
-    icon: (
-      <>
-        <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z" />
-        <circle cx="12" cy="12" r="2.5" />
-      </>
-    ),
-  },
-  {
-    key: 'press',
-    label: 'In press',
-    note: 'On the machine now',
-    icon: (
-      <>
-        <path d="M6 9V3h12v6" />
-        <path d="M6 18H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2" />
-        <rect x="6" y="14" width="12" height="7" />
-      </>
-    ),
-  },
-  {
-    key: 'finishing',
-    label: 'Finishing',
-    note: 'Cut, hemmed and checked',
-    icon: (
-      <>
-        <circle cx="6" cy="6" r="2.5" />
-        <circle cx="6" cy="18" r="2.5" />
-        <path d="M20 4L8.5 16.5" />
-        <path d="M14.5 14.5L20 20" />
-        <path d="M8.5 7.5L11 10" />
-      </>
-    ),
-  },
-  {
-    key: 'ready',
-    label: 'Ready to collect',
-    note: 'We’ll text you',
-    icon: (
-      <>
-        <path d="M3 9l1.5-5h15L21 9" />
-        <path d="M4 9h16v11H4z" />
-        <path d="M9 20v-6h6v6" />
-      </>
-    ),
-  },
+  { key: 'paid', label: 'Paid' },
+  { key: 'inspecting', label: 'Inspecting' },
+  { key: 'press', label: 'In press' },
+  { key: 'finishing', label: 'Finishing' },
+  { key: 'ready', label: 'Ready to collect' },
 ]
 
 export default function Track() {
@@ -95,10 +41,10 @@ export default function Track() {
   const token = params.get('t')
   if (!orderNumber || !token) return <FindOrder navigate={navigate} />
 
-  return <OrderState orderNumber={orderNumber} token={token} />
+  return <Record orderNumber={orderNumber} token={token} />
 }
 
-function OrderState({ orderNumber, token }) {
+function Record({ orderNumber, token }) {
   const { data: order, isLoading, isError } = useQuery({
     queryKey: ['tracked-order', orderNumber],
     queryFn: () => getOrder(orderNumber, token).then(r => r.data),
@@ -144,32 +90,80 @@ function OrderState({ orderNumber, token }) {
 
   return (
     <Shell orderNumber={order.order_number}>
-      <div className="py-6">
+      <div className="py-6 sm:py-8">
 
-        <div className="rounded-xl border border-rule bg-substrate/40 px-4 py-3.5
-                        flex items-start justify-between gap-4">
+        <p className="text-xs text-body/70">
+          Your order <span className="mx-1">›</span>
+          <span className="text-body">{order.order_number}</span>
+        </p>
+
+        <div className="mt-2 sm:flex sm:items-start sm:justify-between sm:gap-6">
           <div className="min-w-0">
-            <p className="text-lg font-bold leading-tight">
-              {STAGES[Math.max(0, reached)].label === 'Ready to collect'
-                ? 'Ready to collect'
-                : headline(order, STAGES[Math.max(0, reached)].key)}
+            <h1 className="text-2xl sm:text-[1.75rem] font-extrabold tracking-tight
+                           tabular-nums">
+              {order.order_number}
+            </h1>
+            <p className="mt-1.5 text-xs sm:text-sm text-body">
+              {order.paid_at && <>Ordered {dateLabel(order.paid_at)}</>}
+              {order.promised_for && reached < STAGES.length - 1 && (
+                <>
+                  {order.paid_at && <span className="mx-1.5">·</span>}
+                  <span className="font-semibold text-emerald-700">
+                    Ready about {readyLabel(order.promised_for)}
+                  </span>
+                </>
+              )}
+              {reached === STAGES.length - 1 && (
+                <>
+                  {order.paid_at && <span className="mx-1.5">·</span>}
+                  <span className="font-semibold text-emerald-700">
+                    Ready to collect
+                  </span>
+                </>
+              )}
             </p>
-            {order.job_number && (
-              <p className="mt-0.5 text-xs text-body">Job {order.job_number}</p>
-            )}
           </div>
-          {order.promised_for && reached < STAGES.length - 1 && (
-            <div className="text-right shrink-0">
-              <p className="text-[0.7rem] text-body">Ready about</p>
-              <p className="text-sm font-bold tabular-nums">
-                {readyLabel(order.promised_for)}
-              </p>
-            </div>
-          )}
+
+          <div className="mt-4 sm:mt-0 flex gap-2 shrink-0">
+            {/* A receipt we do not generate yet. Shown because it is
+                what a customer reaches for from a page like this, and
+                saying "soon" beats pretending the need is not there. */}
+            <button
+              disabled
+              title="Coming soon"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg
+                         border border-rule text-xs font-semibold text-body/60
+                         cursor-not-allowed"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
+                   className="w-4 h-4" aria-hidden="true">
+                <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" />
+                <path d="M9 8h6M9 12h6" />
+              </svg>
+              Receipt
+            </button>
+
+            <a
+              href={directionsHref(order.branch)}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg
+                         bg-farhat text-white text-xs font-semibold
+                         hover:opacity-90 transition-opacity"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+                   className="w-4 h-4" aria-hidden="true">
+                <path d="M3 11l18-8-8 18-2-8-8-2z" />
+              </svg>
+              Directions
+            </a>
+          </div>
         </div>
 
         {order.is_halted && (
-          <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200
+          <div className="mt-4 rounded-lg bg-amber-50 border border-amber-200
                           px-3.5 py-3">
             <p className="text-sm font-semibold text-amber-800">
               Paused for the moment
@@ -180,125 +174,228 @@ function OrderState({ orderNumber, token }) {
           </div>
         )}
 
-        {/* ── Where it's got to ──────────────────────────────── */}
+        <div className="mt-6 lg:flex lg:gap-7 lg:items-start">
 
-        <h2 className="mt-7 mb-3.5 text-[0.95rem] font-semibold">
-          Where it’s got to
-        </h2>
+          {/* ── The record ───────────────────────────────────── */}
 
-        <ol className="relative">
-          {STAGES.map((stage, i) => {
-            const done = i < reached
-            const current = i === reached
-            const last = i === STAGES.length - 1
+          <div className="lg:flex-1 lg:min-w-0">
 
-            return (
-              <li key={stage.key} className="relative flex gap-3 pb-4 last:pb-0">
-                {/* The line joins this marker to the next, and is
-                    coloured by whether the work has passed it. */}
-                {!last && (
-                  <span className={`absolute left-[14px] top-[30px] bottom-0 w-0.5
-                                    ${done ? 'bg-emerald-600' : 'bg-rule'}`} />
-                )}
-
-                <span className={`relative z-[1] shrink-0 w-[30px] h-[30px] rounded-full
-                                  grid place-items-center
-                                  ${done ? 'bg-emerald-600'
-                                    : current ? 'bg-farhat ring-4 ring-farhat/15'
-                                    : 'border-2 border-rule bg-white'}`}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                       strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
-                       className={`w-[15px] h-[15px] ${
-                         done || current ? 'text-white' : 'text-body/40'
-                       }`} aria-hidden="true">
-                    {stage.icon}
-                  </svg>
-                </span>
-
-                <div className="pt-0.5 min-w-0">
-                  <p className={`text-sm leading-tight ${
-                    current ? 'font-bold text-farhat'
-                    : done ? 'font-semibold'
-                    : 'font-semibold text-body/70'
-                  }`}>
-                    {stage.label}
-                  </p>
-                  <p className={`mt-1 text-xs leading-relaxed ${
-                    done || current ? 'text-body' : 'text-body/60'
-                  }`}>
-                    {stage.note}
-                    {times[stage.key] && (
-                      <span className="text-body/70"> · {timeLabel(times[stage.key])}</span>
-                    )}
-                  </p>
-                </div>
-              </li>
-            )
-          })}
-        </ol>
-
-        {/* ── What's in it ───────────────────────────────────── */}
-
-        <h2 className="mt-7 mb-3 text-[0.95rem] font-semibold">What’s in it</h2>
-
-        <div className="rounded-xl border border-rule divide-y divide-rule">
-          {lines.map(line => (
-            <div key={line.id} className="px-3 py-2.5 flex items-center gap-3">
-              {serviceImage(line.service_name) ? (
-                <img src={serviceImage(line.service_name)} alt=""
-                     className="w-10 h-10 rounded-lg object-cover border border-rule
-                                shrink-0" />
-              ) : (
-                <div className="w-10 h-10 rounded-lg bg-substrate border border-rule
-                                shrink-0" />
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate">{line.service_name}</p>
-                <p className="mt-0.5 text-xs text-body">{describe(line)}</p>
-              </div>
-              <p className="text-sm font-bold tabular-nums shrink-0">
-                GHS {line.total}
-              </p>
+            <div className="rounded-xl border border-rule divide-y divide-rule">
+              {lines.map(line => (
+                <LineRow key={line.id} line={line} />
+              ))}
             </div>
-          ))}
+
+            <div className="mt-6 grid sm:grid-cols-2 gap-6">
+              <div>
+                <h2 className="text-[0.95rem] font-semibold">Payment</h2>
+                <div className="mt-2.5 flex items-center gap-2">
+                  <span className="w-8 h-5 rounded bg-substrate grid place-items-center
+                                   shrink-0">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
+                         className="w-3.5 h-3.5 text-body" aria-hidden="true">
+                      <rect x="6" y="2.5" width="12" height="19" rx="2" />
+                      <path d="M11 18.5h2" />
+                    </svg>
+                  </span>
+                  <span className="text-sm">
+                    {paymentLabel(order)}
+                  </span>
+                </div>
+                {order.paid_at && (
+                  <p className="mt-1.5 text-xs text-body">
+                    Paid in full, {dateLabel(order.paid_at)}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <h2 className="text-[0.95rem] font-semibold">Collection</h2>
+                {order.branch ? (
+                  <>
+                    <p className="mt-2.5 text-sm font-semibold">
+                      {order.branch.name}
+                    </p>
+                    {order.branch.address && (
+                      <p className="mt-1 text-xs leading-relaxed text-body">
+                        {order.branch.address}
+                      </p>
+                    )}
+                    {order.branch.phone && (
+                      <a href={`tel:${order.branch.phone}`}
+                         className="mt-1.5 inline-block text-xs font-semibold
+                                    text-farhat">
+                        {order.branch.phone}
+                      </a>
+                    )}
+                  </>
+                ) : (
+                  <p className="mt-2.5 text-sm text-body">
+                    We’ll confirm where to collect shortly.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-rule">
+              {Number(order.discount_amount) > 0 && (
+                <>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-body">Items</span>
+                    <span className="tabular-nums">GHS {order.full_total}</span>
+                  </div>
+                  <div className="mt-1.5 flex items-center justify-between text-sm">
+                    <span className="text-emerald-700">
+                      {order.discount_reason}
+                    </span>
+                    <span className="tabular-nums text-emerald-700">
+                      − GHS {order.discount_amount}
+                    </span>
+                  </div>
+                </>
+              )}
+
+              <div className="mt-3 pt-3 border-t border-rule flex items-baseline
+                              justify-between">
+                <span className="text-[0.95rem] font-semibold">Paid</span>
+                <span className="text-xl font-extrabold tabular-nums">
+                  GHS {order.total}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Where it's got to ────────────────────────────── */}
+
+          <aside className="mt-7 lg:mt-0 lg:w-[270px] shrink-0">
+            <div className="rounded-xl border border-rule bg-substrate/40 px-4 py-4">
+              <h2 className="text-[0.95rem] font-semibold">Where it’s got to</h2>
+
+              <ol className="mt-3.5">
+                {STAGES.map((stage, i) => {
+                  const done = i < reached
+                  const current = i === reached
+                  const last = i === STAGES.length - 1
+
+                  return (
+                    <li key={stage.key} className="relative flex gap-2.5 pb-3.5
+                                                   last:pb-0">
+                      {!last && (
+                        <span className={`absolute left-[11px] top-[25px] bottom-0 w-0.5
+                                          ${done ? 'bg-emerald-600' : 'bg-rule'}`} />
+                      )}
+
+                      <span className={`relative z-[1] shrink-0 w-6 h-6 rounded-full
+                                        grid place-items-center
+                                        ${done ? 'bg-emerald-600'
+                                          : current ? 'bg-farhat ring-[3.5px] ring-farhat/15'
+                                          : 'border-2 border-rule bg-white'}`}>
+                        {done && (
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                               strokeWidth="3" strokeLinecap="round"
+                               strokeLinejoin="round"
+                               className="w-3 h-3 text-white" aria-hidden="true">
+                            <path d="M5 12.5l4.5 4.5L19 7" />
+                          </svg>
+                        )}
+                        {current && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                        )}
+                      </span>
+
+                      <div className="pt-0.5 min-w-0">
+                        <p className={`text-xs leading-tight ${
+                          current ? 'font-bold text-farhat'
+                          : done ? 'font-semibold'
+                          : 'font-semibold text-body/60'
+                        }`}>
+                          {stage.label}
+                        </p>
+                        {times[stage.key] && (
+                          <p className="mt-1 text-[0.7rem] text-body">
+                            {timeLabel(times[stage.key])}
+                          </p>
+                        )}
+                        {current && !times[stage.key] && (
+                          <p className="mt-1 text-[0.7rem] text-body">Now</p>
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ol>
+            </div>
+
+            {order.branch && (
+              <div className="mt-3">
+                <CollectionMap branch={order.branch} />
+              </div>
+            )}
+
+            <p className="mt-3 text-[0.7rem] leading-relaxed text-center text-body">
+              We’ll text you the moment it’s ready to collect.
+            </p>
+          </aside>
         </div>
-
-        <div className="mt-2.5 px-1 flex items-baseline justify-between">
-          <span className="text-sm text-body">Paid</span>
-          <span className="text-lg font-extrabold tabular-nums">
-            GHS {order.total}
-          </span>
-        </div>
-
-        {/* ── Where to get it ────────────────────────────────── */}
-
-        {order.branch && (
-          <>
-            <h2 className="mt-7 mb-3 text-[0.95rem] font-semibold">
-              Where to collect
-            </h2>
-            <CollectionMap branch={order.branch} />
-          </>
-        )}
       </div>
     </Shell>
   )
 }
 
-/**
- * For someone who lost the text message.
- *
- * The order number and the phone they gave — the same pair the shop
- * would ask for across the counter, and the same pair a stranger would
- * struggle to guess together.
- */
-/**
- * For someone who lost the text message.
- *
- * The order number and the phone they gave — the same pair the shop
- * would ask for across the counter, and the same pair a stranger would
- * struggle to guess together.
- */
+function LineRow({ line }) {
+  const photo = serviceImage(line.service_name)
+  const spec = line.specifications || {}
+  const area = spec.width_in && spec.height_in
+    ? (Number(spec.width_in) * Number(spec.height_in)) / 144
+    : null
+
+  return (
+    <div className="px-3.5 py-3 flex items-center gap-3">
+      {photo ? (
+        <img src={photo} alt="" className="w-[52px] h-[52px] rounded-lg object-cover
+                                           border border-rule shrink-0" />
+      ) : (
+        <div className="w-[52px] h-[52px] rounded-lg bg-substrate border border-rule
+                        shrink-0" />
+      )}
+
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold truncate">{line.service_name}</p>
+        {(spec.width_in || area) && (
+          <p className="mt-0.5 text-xs text-body">
+            {spec.width_in && spec.height_in && (
+              <>{spec.width_in} × {spec.height_in} in</>
+            )}
+            {area && (
+              <>
+                <span className="mx-1.5 text-rule">|</span>
+                {area.toFixed(1)} sq ft
+              </>
+            )}
+          </p>
+        )}
+        {line.artwork_filename && (
+          <p className={`mt-1 flex items-center gap-1 text-[0.7rem] font-semibold ${
+            line.artwork_verdict === 'warn' ? 'text-amber-700' : 'text-emerald-700'
+          }`}>
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3 shrink-0"
+                 aria-hidden="true">
+              <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm5 7.2l-6.1 6.9a1 1 0 0 1-1.5 0L6 12.6a1 1 0 0 1 1.5-1.3l2.6 2.9 5.4-6.1A1 1 0 0 1 17 9.2z" />
+            </svg>
+            <span className="truncate">{line.artwork_filename}</span>
+          </p>
+        )}
+      </div>
+
+      <div className="text-right shrink-0">
+        <p className="text-sm font-bold tabular-nums">GHS {line.total}</p>
+        <p className="mt-1 text-xs text-body tabular-nums">Qty: {line.quantity}</p>
+      </div>
+    </div>
+  )
+}
+
 function FindOrder({ navigate }) {
   const [number, setNumber] = useState('')
   const [phone, setPhone] = useState('')
@@ -310,8 +407,6 @@ function FindOrder({ navigate }) {
     setProblem('')
     try {
       const { data } = await findOrder(number.trim(), phone.trim())
-      // The token comes back here and goes into the address, so a
-      // reload lands on the same order rather than this form again.
       navigate(`/track/${data.order_number}?t=${data.token}`, { replace: true })
     } catch (err) {
       setProblem(
@@ -326,7 +421,7 @@ function FindOrder({ navigate }) {
 
   return (
     <Shell>
-      <div className="py-10">
+      <div className="py-10 max-w-sm">
         <h1 className="text-xl font-bold">Track an order</h1>
         <p className="mt-1.5 text-sm leading-relaxed text-body">
           The link we texted you goes straight there. If you’ve lost it, your
@@ -370,9 +465,7 @@ function FindOrder({ navigate }) {
           {looking ? 'Looking…' : 'Find my order'}
         </button>
 
-        {problem && (
-          <p className="mt-3 text-sm text-farhat">{problem}</p>
-        )}
+        {problem && <p className="mt-3 text-sm text-farhat">{problem}</p>}
 
         <p className="mt-5 text-xs leading-relaxed text-body">
           Still stuck? Call us on{' '}
@@ -385,9 +478,9 @@ function FindOrder({ navigate }) {
     </Shell>
   )
 }
+
 function stageOf(order) {
   if (order.handover_state === 'HANDED_OVER') return 'ready'
-
   switch (order.work_state) {
     case 'DONE': return 'ready'
     case 'FINISHING':
@@ -398,24 +491,39 @@ function stageOf(order) {
   }
 }
 
-function headline(order, stage) {
-  if (order.handover_state === 'HANDED_OVER') return 'Collected — thank you'
-  return {
-    paid: 'Paid — with the shop now',
-    inspecting: 'Being looked over',
-    press: 'On the press',
-    finishing: 'Nearly there',
-    ready: 'Ready to collect',
-  }[stage]
+/**
+ * How it was paid. Paystack tells us the channel on the webhook, so
+ * this is their word rather than our guess.
+ */
+function paymentLabel(order) {
+  const channel = {
+    mobile_money: 'Mobile money',
+    card: 'Card',
+    bank: 'Bank transfer',
+    bank_transfer: 'Bank transfer',
+    ussd: 'USSD',
+  }[order.payment_channel] || 'Paid online'
+
+  return order.payment_last4
+    ? `${channel} ·· ${order.payment_last4}`
+    : channel
 }
 
-function describe(line) {
-  const spec = line.specifications || {}
-  const size = spec.width_in && spec.height_in
-    ? `${spec.width_in} × ${spec.height_in} in`
-    : null
-  const count = `${line.quantity} piece${line.quantity === 1 ? '' : 's'}`
-  return size ? `${size} · ${count}` : count
+function directionsHref(branch) {
+  if (branch?.latitude && branch?.longitude) {
+    return `https://www.google.com/maps/dir/?api=1&destination=${branch.latitude},${branch.longitude}`
+  }
+  const query = encodeURIComponent(
+    `${branch?.name || 'Farhat Printing Press'} ${branch?.address || 'Accra'}`,
+  )
+  return `https://www.google.com/maps/search/?api=1&query=${query}`
+}
+
+function dateLabel(when) {
+  const at = new Date(when)
+  return `${at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}, ${
+    at.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
+  }`
 }
 
 function timeLabel(when) {
@@ -424,8 +532,8 @@ function timeLabel(when) {
     hour: 'numeric', minute: '2-digit', hour12: true,
   })
   const today = new Date().toDateString() === at.toDateString()
-  if (today) return time
-  return `${at.toLocaleDateString('en-GB', { weekday: 'short' })} ${time}`
+  return today ? time
+    : `${at.toLocaleDateString('en-GB', { weekday: 'short' })} ${time}`
 }
 
 function readyLabel(when) {
@@ -434,18 +542,15 @@ function readyLabel(when) {
     hour: 'numeric', minute: '2-digit', hour12: true,
   })
   const today = new Date().toDateString() === at.toDateString()
-  if (today) return `${time} today`
-  return `${at.toLocaleDateString('en-GB', { weekday: 'short' })} ${time}`
+  return today ? `${time} today`
+    : `${at.toLocaleDateString('en-GB', { weekday: 'short' })} ${time}`
 }
 
 function Shell({ orderNumber, children }) {
   return (
     <div className="min-h-screen bg-white text-ink">
       <Header back orderNumber={orderNumber} />
-      {/* Held to a readable column. A tracking page is one narrow
-          story, and letting it run the width of a desktop screen makes
-          every line a journey. */}
-      <main className="w-full max-w-md mx-auto px-5">{children}</main>
+      <main className="max-w-4xl mx-auto px-5">{children}</main>
     </div>
   )
 }
