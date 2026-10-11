@@ -5,6 +5,8 @@ import { getOrder } from '../api/client'
 import { serviceImage } from '../lib/images'
 import Header from '../components/Header.jsx'
 import CollectionMap from '../components/CollectionMap.jsx'
+import { getOrder, findOrder } from '../api/client'
+
 /**
  * Where an order has got to.
  *
@@ -291,9 +293,37 @@ function OrderState({ orderNumber, token }) {
  * would ask for across the counter, and the same pair a stranger would
  * struggle to guess together.
  */
+/**
+ * For someone who lost the text message.
+ *
+ * The order number and the phone they gave — the same pair the shop
+ * would ask for across the counter, and the same pair a stranger would
+ * struggle to guess together.
+ */
 function FindOrder({ navigate }) {
   const [number, setNumber] = useState('')
   const [phone, setPhone] = useState('')
+  const [looking, setLooking] = useState(false)
+  const [problem, setProblem] = useState('')
+
+  async function look() {
+    setLooking(true)
+    setProblem('')
+    try {
+      const { data } = await findOrder(number.trim(), phone.trim())
+      // The token comes back here and goes into the address, so a
+      // reload lands on the same order rather than this form again.
+      navigate(`/track/${data.order_number}?t=${data.token}`, { replace: true })
+    } catch (err) {
+      setProblem(
+        err.response?.status === 429
+          ? 'Too many tries. Wait a little, or call us on 030 000 0000.'
+          : err.response?.data?.detail ||
+            'We couldn’t find that one. Check both and try again.',
+      )
+      setLooking(false)
+    }
+  }
 
   return (
     <Shell>
@@ -322,6 +352,9 @@ function FindOrder({ navigate }) {
             type="tel" inputMode="tel"
             value={phone}
             onChange={e => setPhone(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && number.trim() && phone.trim()) look()
+            }}
             placeholder="024 000 0000"
             className="w-full px-3 py-2.5 rounded-lg border border-rule text-[0.95rem]
                        placeholder:text-body/40 focus:outline-none focus:border-ink"
@@ -329,14 +362,18 @@ function FindOrder({ navigate }) {
         </label>
 
         <button
-          disabled={!number.trim() || !phone.trim()}
-          onClick={() => navigate(`/track/${number.trim()}?phone=${phone.trim()}`)}
+          disabled={looking || !number.trim() || !phone.trim()}
+          onClick={look}
           className="mt-4 w-full px-4 py-3 rounded-lg bg-farhat text-white text-sm
                      font-semibold disabled:opacity-40 hover:opacity-90
                      transition-opacity"
         >
-          Find my order
+          {looking ? 'Looking…' : 'Find my order'}
         </button>
+
+        {problem && (
+          <p className="mt-3 text-sm text-farhat">{problem}</p>
+        )}
 
         <p className="mt-5 text-xs leading-relaxed text-body">
           Still stuck? Call us on{' '}
@@ -349,7 +386,6 @@ function FindOrder({ navigate }) {
     </Shell>
   )
 }
-
 function stageOf(order) {
   if (order.handover_state === 'HANDED_OVER') return 'ready'
 
