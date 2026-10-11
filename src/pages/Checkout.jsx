@@ -201,7 +201,7 @@ export default function Checkout() {
 
       <Header back />
 
-      <main className="max-w-5xl mx-auto px-5 pt-6 lg:flex lg:gap-8 lg:items-start">
+      <main className="max-w-4xl mx-auto px-5 pt-6 lg:flex lg:gap-8 lg:items-start">
 
         {/* ── The cart ─────────────────────────────────────────── */}
 
@@ -242,7 +242,7 @@ export default function Checkout() {
 
         {/* ── Finishing ────────────────────────────────────────── */}
 
-        <aside className="mt-8 lg:mt-0 lg:w-[360px] shrink-0">
+        <aside className="mt-8 lg:mt-0 lg:w-[320px] shrink-0">
           <div className="rounded-xl border border-rule bg-substrate/40 px-4 py-4">
 
             <h2 className="text-[0.95rem] font-semibold">How do we reach you?</h2>
@@ -529,7 +529,7 @@ function Shell({ children }) {
           Farhat<span className="font-normal text-white/85"> Printing Press</span>
         </p>
       </header>
-      <main className="max-w-5xl mx-auto px-5">{children}</main>
+      <main className="max-w-4xl mx-auto px-5">{children}</main>
     </div>
   )
 }

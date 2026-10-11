@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getOrder } from '../api/client'
 import { serviceImage } from '../lib/images'
 import Header from '../components/Header.jsx'
-
+import CollectionMap from '../components/CollectionMap.jsx'
 /**
  * Where an order has got to.
  *
@@ -271,39 +271,13 @@ function OrderState({ orderNumber, token }) {
 
         {/* ── Where to get it ────────────────────────────────── */}
 
-        {order.branch_name && (
-          <div className="mt-5 rounded-xl border border-rule px-4 py-3.5
-                          flex items-center gap-3">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
-                 className="w-5 h-5 shrink-0 text-farhat" aria-hidden="true">
-              <path d="M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11z" />
-              <circle cx="12" cy="10" r="2.5" />
-            </svg>
-
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold">
-                Collect at {order.branch_name}
-              </p>
-              {order.branch_address && (
-                <p className="mt-0.5 text-xs text-body truncate">
-                  {order.branch_address}
-                </p>
-              )}
-            </div>
-
-            {order.branch_phone && (
-              <a href={`tel:${order.branch_phone}`}
-                 aria-label={`Call ${order.branch_name}`}
-                 className="shrink-0 text-farhat hover:opacity-70 transition-opacity">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                     strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
-                     className="w-5 h-5">
-                  <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a1 1 0 0 1-1 1A16 16 0 0 1 4 5a1 1 0 0 1 1-1z" />
-                </svg>
-              </a>
-            )}
-          </div>
+        {order.branch && (
+          <>
+            <h2 className="mt-7 mb-3 text-[0.95rem] font-semibold">
+              Where to collect
+            </h2>
+            <CollectionMap branch={order.branch} />
+          </>
         )}
       </div>
     </Shell>
