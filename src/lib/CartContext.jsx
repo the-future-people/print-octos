@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { getOrder } from '../api/client'
 import { loadOrder, saveOrder, clearOrder } from './order'
 
@@ -22,6 +23,7 @@ import { loadOrder, saveOrder, clearOrder } from './order'
 const CartContext = createContext(null)
 
 export function CartProvider({ children }) {
+  const queryClient = useQueryClient()
   const [order, setOrder] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -84,7 +86,14 @@ export function CartProvider({ children }) {
       total: result.total,
       line_items: Array.from({ length: result.line_count }),
     }))
-  }, [])
+
+    // Any page holding a cached copy of this order is now wrong. The
+    // context and a page's own query are two views of one thing, and
+    // only this makes them agree — without it the customer adds an
+    // item and the cart shows what it held a moment ago.
+    queryClient.invalidateQueries({ queryKey: ['order'] })
+    queryClient.invalidateQueries({ queryKey: ['order-file'] })
+  }, [queryClient])
 
   /**
    * Done with this cart — it has been paid for, or the customer asked
