@@ -81,4 +81,58 @@ export const getBranchOptions = (orderNumber, token, location) =>
     },
   })
 
+  /**
+ * Judges artwork against a size, and commits nothing.
+ *
+ * Comes back with a signed verdict that the commit will check against
+ * the file and the size it was judged at — so a customer cannot pass a
+ * good file and then send something else.
+ */
+export const checkArtwork = (file, serviceId, specifications, onProgress) => {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('service', serviceId)
+  form.append('specifications', JSON.stringify(specifications))
+
+  return axios.post(
+    `${client.defaults.baseURL}/api/v1/storefront/check/`,
+    form,
+    {
+      onUploadProgress: event => {
+        if (!onProgress || !event.total) return
+        onProgress(Math.round((event.loaded / event.total) * 100))
+      },
+    },
+  )
+}
+
+/**
+ * What a line would cost, without committing it.
+ */
+export const quoteLine = (serviceId, quantity, specifications) =>
+  client.post('/api/v1/storefront/quote/', {
+    service: serviceId,
+    quantity,
+    specifications,
+  })
+
+/**
+ * Continue. The moment anything becomes real.
+ *
+ * The key makes a retry safe: a commit whose response is lost is a
+ * normal event on mobile data, and pressing again must not buy the
+ * banner twice.
+ */
+export const commitLine = ({
+  key, orderNumber, token, serviceId, quantity, specifications, artworkToken,
+}) =>
+  client.post('/api/v1/storefront/commit/', {
+    idempotency_key: key,
+    ...(orderNumber ? { order: orderNumber, token } : {}),
+    service: serviceId,
+    quantity,
+    specifications,
+    ...(artworkToken ? { artwork_token: artworkToken } : {}),
+  })
+  
 export default client

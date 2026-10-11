@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { uploadFile, acceptWarning } from '../api/client'
+import { checkArtwork } from '../api/client'
 import ArtworkPreview from './ArtworkPreview.jsx'
 
 /**
- * Sending artwork, and being told whether it will print.
+ * Sending artwork to be judged, before anything is committed.
  *
  * Behind the wait, Octos opens the file, measures every image in it,
  * works out the effective resolution at the size ordered, compares the
@@ -12,11 +12,13 @@ import ArtworkPreview from './ArtworkPreview.jsx'
  *
  * The first is real: upload progress is reported by the browser, and
  * on a phone most of the wait is the bytes leaving it. The last is
- * paced — the server does the work in one request and cannot report
+ * paced — the server does its work in one request and cannot narrate
  * its own middle.
  *
- * Refuse blocks the order. Warn proceeds once the customer has said
- * carry on, and that acceptance is recorded rather than assumed.
+ * Nothing is committed here. The file is held server-side so it need
+ * not be sent twice, and the verdict comes back signed: the commit
+ * checks it against the file and the size it was judged at, so a good
+ * file cannot be swapped for a bad one after the pass.
  */
 
 const STAGES = [
@@ -63,7 +65,9 @@ const VERDICTS = {
   },
 }
 
-export default function ArtworkUpload({ order, lineId, result, onResult }) {
+export default function ArtworkUpload({
+  service, specifications, result, onResult,
+}) {
   const input = useRef(null)
   const [chosen, setChosen] = useState(null)
   const [stage, setStage] = useState(null)
@@ -72,8 +76,6 @@ export default function ArtworkUpload({ order, lineId, result, onResult }) {
 
   const busy = stage !== null
 
-  // The first two stages are real events. The third is paced, because
-  // the server does its work in one request and cannot narrate itself.
   useEffect(() => {
     if (stage !== 'read') return
     const timer = setTimeout(() => setStage('judged'), 700)
@@ -81,7 +83,7 @@ export default function ArtworkUpload({ order, lineId, result, onResult }) {
   }, [stage])
 
   async function send(file) {
-    if (!file || !order) return
+    if (!file || !service) return
 
     setChosen(file)
     setProblem('')
@@ -89,8 +91,8 @@ export default function ArtworkUpload({ order, lineId, result, onResult }) {
     setStage('sent')
 
     try {
-      const { data } = await uploadFile(
-        order.order_number, order.access_token, file, lineId,
+      const { data } = await checkArtwork(
+        file, service.id, specifications,
         percent => {
           setProgress(percent)
           if (percent >= 100) setStage('read')
@@ -104,21 +106,6 @@ export default function ArtworkUpload({ order, lineId, result, onResult }) {
       setProblem(
         err.response?.data?.detail ||
         'We couldn’t read that file. Try sending it again.',
-      )
-    }
-  }
-
-  async function accept() {
-    setProblem('')
-    try {
-      const { data } = await acceptWarning(
-        order.order_number, order.access_token, lineId,
-      )
-      onResult(data)
-    } catch (err) {
-      setProblem(
-        err.response?.data?.detail ||
-        'We couldn’t record that. Try again in a moment.',
       )
     }
   }
@@ -141,22 +128,18 @@ export default function ArtworkUpload({ order, lineId, result, onResult }) {
           const file = e.target.files?.[0]
           // Cleared straight away, so choosing the same file again
           // still counts as a change. Without this, a customer who
-          // re-exports their artwork under the same name picks it and
-          // nothing happens.
+          // re-exports under the same name taps and nothing happens.
           e.target.value = ''
           send(file)
         }}
       />
 
-      {/* ── Nothing sent yet ──────────────────────────────────── */}
-
       {!result && !busy && (
         <button
           onClick={() => input.current?.click()}
-          disabled={!order}
           className="mt-3 w-full px-4 py-6 rounded-xl border-[1.5px] border-dashed
                      border-rule bg-substrate/40 hover:border-ink hover:bg-substrate/70
-                     disabled:opacity-40 transition-colors focus:outline-none
+                     transition-colors focus:outline-none
                      focus-visible:ring-2 focus-visible:ring-ink"
         >
           <span className="inline-flex items-center gap-2">
@@ -174,8 +157,6 @@ export default function ArtworkUpload({ order, lineId, result, onResult }) {
           </span>
         </button>
       )}
-
-      {/* ── On its way ────────────────────────────────────────── */}
 
       {busy && (
         <div className="mt-3 rounded-xl border border-rule overflow-hidden">
@@ -234,8 +215,6 @@ export default function ArtworkUpload({ order, lineId, result, onResult }) {
         </div>
       )}
 
-      {/* ── Checked ───────────────────────────────────────────── */}
-
       {result && !busy && (
         <div className={`mt-3 rounded-xl border overflow-hidden ${
           result.verdict === 'refuse' ? 'border-farhat/30' : 'border-rule'
@@ -283,18 +262,10 @@ export default function ArtworkUpload({ order, lineId, result, onResult }) {
             ))}
           </ul>
 
-          {result.verdict === 'warn' && !result.warning_accepted && (
-            <div className="px-3.5 pb-3">
-              <button
-                onClick={accept}
-                className="w-full px-4 py-2.5 rounded-lg border border-ink text-sm
-                           font-semibold hover:bg-ink hover:text-white
-                           transition-colors focus:outline-none focus-visible:ring-2
-                           focus-visible:ring-ink"
-              >
-                I understand — print it anyway
-              </button>
-            </div>
+          {result.verdict === 'warn' && (
+            <p className="px-3.5 pb-3 text-xs leading-relaxed text-body">
+              We’ll print it as it is if you carry on.
+            </p>
           )}
         </div>
       )}

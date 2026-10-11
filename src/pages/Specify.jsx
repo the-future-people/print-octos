@@ -1,41 +1,36 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { getCatalogue, createOrder, updateOrder, getFile, getOrder } from '../api/client'
-import { loadOrder, saveOrder } from '../lib/order'
+import { getCatalogue, quoteLine, commitLine } from '../api/client'
+import { useCart } from '../lib/CartContext.jsx'
+import { useToast } from '../lib/ToastContext.jsx'
 import { serviceImage } from '../lib/images'
 import ArtworkUpload from '../components/ArtworkUpload.jsx'
 import logo from '../assets/farhat-logo.png'
 
 /**
- * What the customer is ordering, and what it costs.
+ * Configuring one item.
  *
- * Size first, then the artwork. An order can hold a banner and flyers
- * at once, so a file belongs to a line rather than to the order — and
- * the line does not exist until there is something to price. The size
- * is what brings it into being.
+ * Nothing here touches the server's idea of what has been ordered. The
+ * size, the quantity and the artwork all live in this page until the
+ * customer presses Continue — so someone who opens a banner, looks at
+ * the price and wanders back to the catalogue leaves nothing behind.
  *
- * The photograph sits beside the inputs rather than on a screen of its
- * own. Seeing what you are buying while you size it is the cheapest
- * moment to catch a mistake, and it costs no extra step.
+ * That was the whole trouble with the previous version: it created an
+ * order the moment the page opened, which meant phantom cart items,
+ * half-made lines, and a page forever trying to work out which line
+ * was its own.
  *
- * The price sits with the controls that change it rather than pinned
- * to the bottom of the window, so the number moves where the customer
- * is already looking.
- *
- * An order is created the moment this page opens, before anyone has
- * agreed to anything. Most are abandoned here and that costs nothing.
+ * Pricing and the artwork check both happen on the server and commit
+ * nothing. The check hands back a signed verdict that the commit
+ * verifies against the file and the size it was judged at — so a
+ * customer cannot pass a good file and send something else.
  */
 export default function Specify() {
   const { serviceId } = useParams()
   const navigate = useNavigate()
-  const [params] = useSearchParams()
-
-  // Which line this page is editing. Absent from the catalogue, which
-  // means a new item — two banners at different sizes are two lines,
-  // not one overwritten twice. Present when the cart sends you back to
-  // something you already configured.
-  const editingId = params.get('line') || null
+  const cart = useCart()
+  const toast = useToast()
 
   const { data: services = [], isLoading: loadingCatalogue } = useQuery({
     queryKey: ['catalogue'],
@@ -44,47 +39,35 @@ export default function Specify() {
 
   const service = services.find(s => String(s.id) === String(serviceId))
 
-  const [order, setOrder] = useState(() => loadOrder())
   const [values, setValues] = useState({})
   const [quantity, setQuantity] = useState(1)
   const [quote, setQuote] = useState(null)
   const [pricing, setPricing] = useState(false)
+  const [artwork, setArtwork] = useState(null)
+  const [committing, setCommitting] = useState(false)
   const [problem, setProblem] = useState('')
-  const [fileResult, setFileResult] = useState(null)
 
-  // The id the server gave this line on its first price. Held so later
-  // repricings update it rather than adding another.
-  const [workingId, setWorkingId] = useState(null)
+  // One key per attempt. A commit whose response is lost is a normal
+  // event on mobile data, and the retry carries the same key so the
+  // server returns what it did the first time rather than doing it
+  // again.
+  const commitKey = useRef(crypto.randomUUID().replace(/-/g, ''))
 
-  // What else is already on the order — a banner configured earlier,
-  // say. The PATCH replaces the whole list, so these have to travel
-  // with every reprice or they are deleted.
-  const [otherLines, setOtherLines] = useState([])
-
-  // Whether the order has been read back from the server yet. Pricing
-  // before it lands would send a list missing everything already in
-  // the cart, and the PATCH would delete those items.
-  const [loaded, setLoaded] = useState(false)
-
-  // A copy of otherLines the pricing effect can read without listing it
-  // as a dependency. Listing it restarts the effect every time the
-  // array is rebuilt — a new array is a new value even with identical
-  // contents — and the restart cancels the timer before it fires.
-  const otherLinesRef = useRef([])
-  useEffect(() => { otherLinesRef.current = otherLines }, [otherLines])
-
-  // The spec's own fields, minus quantity — that has its own control
-  // below, and one number held in two places is how a job gets charged
-  // for a single page when the customer asked for ten.
   const fields = useMemo(
     () => (service?.spec_template || []).filter(f => f.key !== 'quantity'),
     [service],
   )
 
+  const quantityField = useMemo(
+    () => (service?.spec_template || []).find(f => f.key === 'quantity'),
+    [service],
+  )
+
   const byArea = service?.unit === 'PER_SQFT' || service?.unit === 'PER_SQCM'
 
-  // Starting values from the template. The rehydrate below overwrites
-  // these when the order already has this line.
+  // A fresh form for a fresh item. Switching service, or coming back
+  // after adding something, starts over — the item that was added
+  // lives in the cart now, and that is where it is changed.
   useEffect(() => {
     if (!service) return
     setValues(
@@ -94,103 +77,32 @@ export default function Specify() {
           .map(f => [f.key, f.default ?? '']),
       ),
     )
-    const q = (service.spec_template || []).find(f => f.key === 'quantity')
-    setQuantity(q?.default ?? 1)
-    setWorkingId(null)
+    setQuantity(service.spec_template?.find(f => f.key === 'quantity')?.min ?? 1)
     setQuote(null)
+    setArtwork(null)
+    setProblem('')
+    commitKey.current = crypto.randomUUID().replace(/-/g, '')
   }, [service])
 
+  const sizeMissing = fields.some(
+    f => f.required && (values[f.key] === '' || values[f.key] == null),
+  )
+
+  // Priced after a pause rather than on every keystroke, and priced by
+  // the server: the browser does no arithmetic, because two
+  // implementations of one sum always drift apart.
   useEffect(() => {
-    if (order) return
-    createOrder()
-      .then(r => {
-        saveOrder(r.data)
-        setOrder(r.data)
-      })
-      .catch(() => setProblem('We could not start your order. Refresh to try again.'))
-  }, [order])
-
-  // Everything the customer did is on the server. Coming back to this
-  // page should show their work, not a blank form.
-  useEffect(() => {
-    if (!order || !service) return
-    setLoaded(false)
-    setFileResult(null)
-
-    getOrder(order.order_number, order.access_token)
-      .then(({ data }) => {
-        const all = data.line_items || []
-
-        // Editing a line the cart sent us to, or starting a new one.
-        // Without an id every banner would be the same banner.
-        const mine = editingId ? all.find(l => l.id === editingId) : null
-
-        setOtherLines(all.filter(l => l.id !== mine?.id))
-        otherLinesRef.current = all.filter(l => l.id !== mine?.id)
-
-        if (!mine) return
-
-        setValues(mine.specifications || {})
-        setQuantity(mine.quantity || 1)
-        setWorkingId(mine.id)
-        setQuote(data)
-      })
-      .catch(() => {})
-      .finally(() => setLoaded(true))
-  }, [order, service, editingId])
-
-  // Priced after a pause rather than on every keystroke.
-  useEffect(() => {
-    if (!order || !service || !loaded) return
-
-    const ready = fields.every(f => !f.required || values[f.key] !== '')
-    if (!ready) return
-
-    const currentId = editingId || workingId
+    if (!service || sizeMissing) {
+      setQuote(null)
+      return
+    }
 
     const timer = setTimeout(() => {
       setPricing(true)
       setProblem('')
 
-      updateOrder(order.order_number, order.access_token, {
-        // Every line, not just this one. The list replaces what is on
-        // the order, so leaving the others out would delete them.
-        line_items: [
-          ...otherLinesRef.current.map(l => ({
-            id: l.id,
-            service: l.service,
-            quantity: l.quantity,
-            specifications: l.specifications,
-          })),
-          {
-            ...(currentId ? { id: currentId } : {}),
-            service: service.id,
-            quantity: Number(quantity) || 1,
-            specifications: values,
-          },
-        ],
-      })
-        .then(r => {
-          setQuote(r.data)
-
-          if (!currentId) {
-            const known = otherLinesRef.current.map(l => l.id)
-            const added = (r.data.line_items || []).find(
-              l => !known.includes(l.id),
-            )
-            if (added) {
-              setWorkingId(added.id)
-              // Into the address bar, so a reload — or a resize, which
-              // reloads in dev — comes back to this same item rather
-              // than starting another. Replace, not push, so Back
-              // still goes to the catalogue.
-              navigate(
-                `/service/${service.id}?line=${added.id}`,
-                { replace: true },
-              )
-            }
-          }
-        })
+      quoteLine(service.id, Number(quantity) || 1, values)
+        .then(r => setQuote(r.data))
         .catch(err => {
           setQuote(null)
           setProblem(
@@ -202,22 +114,50 @@ export default function Specify() {
     }, 400)
 
     return () => clearTimeout(timer)
-  }, [order, service, values, quantity, fields, editingId, workingId, loaded])
+  }, [service, values, quantity, sizeMissing])
 
-  // The line this page is working on.
-  const line = (quote?.line_items || []).find(
-    l => l.id === (editingId || workingId),
-  )
-
-  // The file belongs to a line, so it can only be fetched once the
-  // line exists — and re-fetched when the size moves, since a file
-  // fine on a small print is refused across six feet.
+  // The artwork was judged against a size. Changing the size retires
+  // the verdict — a file fine on a small print is refused across six
+  // feet, and the server would refuse a stale token anyway.
   useEffect(() => {
-    if (!order || !line?.id) return
-    getFile(order.order_number, order.access_token, line.id)
-      .then(({ data }) => setFileResult(data))
-      .catch(() => setFileResult(null))
-  }, [order, line?.id, line?.total])
+    setArtwork(null)
+  }, [values])
+
+  async function handleContinue(thenWhat) {
+    if (committing) return
+
+    setCommitting(true)
+    setProblem('')
+
+    try {
+      const { data } = await commitLine({
+        key: commitKey.current,
+        orderNumber: cart.saved?.order_number,
+        token: cart.saved?.access_token,
+        serviceId: service.id,
+        quantity: Number(quantity) || 1,
+        specifications: values,
+        artworkToken: artwork?.token,
+      })
+
+      cart.adopt(data)
+      toast.show(
+        `${service.name} added to your cart`,
+        'We’ll keep it for 7 days — pick up where you left off any time.',
+      )
+
+      navigate(thenWhat === 'checkout' ? '/checkout' : '/')
+    } catch (err) {
+      setProblem(
+        err.response?.data?.detail ||
+        'We couldn’t add that just now. Try again in a moment.',
+      )
+      // A new key: whatever went wrong, the next press is a fresh
+      // attempt rather than a retry of a thing that never happened.
+      commitKey.current = crypto.randomUUID().replace(/-/g, '')
+      setCommitting(false)
+    }
+  }
 
   function setField(key, raw) {
     // Raw while typing. Clamping on every keystroke turns the first
@@ -226,14 +166,20 @@ export default function Specify() {
   }
 
   function clampField(field, raw) {
-    // An empty field stays empty. Filling it with the minimum on blur
-    // would put a number there the customer never chose.
+    // An empty field stays empty. Filling it with the minimum would
+    // put a number there the customer never chose.
     if (raw === '' || raw === null) {
       setValues(v => ({ ...v, [field.key]: '' }))
       return
     }
     const min = field.min ?? 1
     setValues(v => ({ ...v, [field.key]: Math.max(min, Number(raw) || min) }))
+  }
+
+  function stepQuantity(by) {
+    const step = quantityField?.step || 1
+    const min = quantityField?.min || 1
+    setQuantity(q => Math.max(min, (Number(q) || min) + by * step))
   }
 
   if (loadingCatalogue) {
@@ -257,22 +203,18 @@ export default function Specify() {
   const photo = serviceImage(service.name)
   const needsFile = service.requires_file_upload
 
-  const sizeMissing = fields.some(
-    f => f.required && (values[f.key] === '' || values[f.key] == null),
-  )
+  const artworkReady =
+    !needsFile ||
+    (artwork && artwork.verdict !== 'refuse' && artwork.token)
 
-  const canContinue =
-    !!line && Number(line.total) > 0 && artworkReady(service, fileResult)
+  const canContinue = !!quote && artworkReady && !committing
 
-  // The button says what is missing rather than sitting mute and grey.
-  // A disabled control that explains nothing is a dead end.
   const continueLabel =
-    sizeMissing ? 'Enter the size to continue'
-    : !line ? 'Working out the price…'
-    : needsFile && !fileResult ? 'Upload artwork to continue'
-    : needsFile && fileResult?.verdict === 'refuse' ? 'Send different artwork'
-    : needsFile && fileResult?.verdict === 'warn' && !fileResult.warning_accepted
-      ? 'Accept the note to continue'
+    committing ? 'Adding…'
+    : sizeMissing ? 'Enter the size to continue'
+    : !quote ? 'Working out the price…'
+    : needsFile && !artwork ? 'Upload artwork to continue'
+    : needsFile && artwork?.verdict === 'refuse' ? 'Send different artwork'
     : 'Checkout'
 
   return (
@@ -291,6 +233,16 @@ export default function Specify() {
                 Farhat<span className="font-normal text-white/85"> Printing Press</span>
               </p>
             </div>
+
+            {cart.count > 0 && (
+              <button
+                onClick={() => navigate('/checkout')}
+                className="ml-auto shrink-0 text-xs text-white/90 hover:text-white
+                           underline underline-offset-4 decoration-white/40"
+              >
+                {cart.count} item{cart.count === 1 ? '' : 's'} in your cart
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -326,7 +278,7 @@ export default function Specify() {
               </p>
             </div>
 
-            {/* ── The size, first ──────────────────────────────── */}
+            {/* ── The size ─────────────────────────────────────── */}
 
             <div className="mt-5 pt-5 border-t border-rule">
               <p className="flex items-center gap-2 text-[0.95rem] font-semibold">
@@ -339,60 +291,72 @@ export default function Specify() {
                 How big?
               </p>
 
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                {fields.map(field => (
-                  <label key={field.key} className="block">
-                    <span className="block mb-1.5 text-xs text-body">
-                      {field.label}{field.unit ? ` (${field.unit})` : ''}
-                    </span>
-                    {field.type === 'select' ? (
-                      <select
-                        value={values[field.key] ?? ''}
-                        onChange={e => setValues(v => ({ ...v, [field.key]: e.target.value }))}
-                        className="w-full px-3 py-2.5 rounded-lg border border-rule bg-white
-                                   text-[0.95rem] focus:outline-none focus:border-ink"
-                      >
-                        {(field.options || []).map(opt => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type="number" inputMode="numeric"
-                        min={field.min ?? 1} max={field.max}
-                        placeholder={field.placeholder || ''}
-                        value={values[field.key] ?? ''}
-                        onChange={e => setField(field.key, e.target.value)}
-                        onBlur={e => clampField(field, e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-lg border border-rule bg-white
-                                   text-[0.95rem] tabular-nums placeholder:text-body/40
-                                   placeholder:font-normal focus:outline-none
-                                   focus:border-ink"
-                      />
-                    )}
-                  </label>
-                ))}
-              </div>
+              {fields.length > 0 && (
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  {fields.map(field => (
+                    <label key={field.key} className="block">
+                      <span className="block mb-1.5 text-xs text-body">
+                        {field.label}{field.unit ? ` (${field.unit})` : ''}
+                      </span>
+                      {field.type === 'select' ? (
+                        <select
+                          value={values[field.key] ?? ''}
+                          onChange={e => setValues(v => ({ ...v, [field.key]: e.target.value }))}
+                          className="w-full px-3 py-2.5 rounded-lg border border-rule bg-white
+                                     text-[0.95rem] focus:outline-none focus:border-ink"
+                        >
+                          {(field.options || []).map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="number" inputMode="numeric"
+                          min={field.min ?? 1} max={field.max}
+                          placeholder={field.placeholder || ''}
+                          value={values[field.key] ?? ''}
+                          onChange={e => setField(field.key, e.target.value)}
+                          onBlur={e => clampField(field, e.target.value)}
+                          className="w-full px-3 py-2.5 rounded-lg border border-rule bg-white
+                                     text-[0.95rem] tabular-nums placeholder:text-body/40
+                                     placeholder:font-normal focus:outline-none
+                                     focus:border-ink"
+                        />
+                      )}
+                    </label>
+                  ))}
+                </div>
+              )}
 
               <div className="mt-4">
-                <span className="block mb-1.5 text-xs text-body">How many?</span>
+                <span className="block mb-1.5 text-xs text-body">
+                  How many?
+                  {quantityField?.step > 1 && (
+                    <span className="text-body/70">
+                      {' '}· in {quantityField.step}s
+                    </span>
+                  )}
+                </span>
                 <div className="inline-flex items-center gap-3">
-                  <button onClick={() => setQuantity(q => Math.max(1, Number(q) - 1))}
-                          aria-label="One fewer"
+                  <button onClick={() => stepQuantity(-1)} aria-label="Fewer"
                           className="w-10 h-10 rounded-lg border border-rule text-lg
                                      hover:border-ink focus:outline-none
                                      focus-visible:ring-2 focus-visible:ring-ink">
                     −
                   </button>
                   <input
-                    type="number" inputMode="numeric" min="1" value={quantity}
+                    type="number" inputMode="numeric"
+                    min={quantityField?.min || 1}
+                    step={quantityField?.step || 1}
+                    value={quantity}
                     onChange={e => setQuantity(e.target.value === '' ? '' : Number(e.target.value))}
-                    onBlur={e => setQuantity(Math.max(1, Number(e.target.value) || 1))}
-                    className="w-16 px-2 py-2.5 text-center rounded-lg border border-rule
+                    onBlur={e => setQuantity(
+                      Math.max(quantityField?.min || 1, Number(e.target.value) || 1),
+                    )}
+                    className="w-20 px-2 py-2.5 text-center rounded-lg border border-rule
                                text-[0.95rem] tabular-nums focus:outline-none focus:border-ink"
                   />
-                  <button onClick={() => setQuantity(q => Number(q) + 1)}
-                          aria-label="One more"
+                  <button onClick={() => stepQuantity(1)} aria-label="More"
                           className="w-10 h-10 rounded-lg border border-rule text-lg
                                      hover:border-ink focus:outline-none
                                      focus-visible:ring-2 focus-visible:ring-ink">
@@ -411,16 +375,16 @@ export default function Specify() {
 
             {/* ── Then the artwork ─────────────────────────────── */}
 
-            {needsFile && line?.id && (
+            {needsFile && !sizeMissing && (
               <ArtworkUpload
-                order={order}
-                lineId={line.id}
-                result={fileResult}
-                onResult={setFileResult}
+                service={service}
+                specifications={values}
+                result={artwork}
+                onResult={setArtwork}
               />
             )}
 
-            {needsFile && !line?.id && (
+            {needsFile && sizeMissing && (
               <div className="mt-5 pt-5 border-t border-rule">
                 <p className="text-[0.95rem] font-semibold text-body/60">
                   Your artwork
@@ -435,7 +399,7 @@ export default function Specify() {
               <p className="mt-4 text-sm text-farhat">{problem}</p>
             )}
 
-            {line?.minimum_applied && (
+            {quote?.minimum_applied && (
               <p className="mt-4 rounded-lg bg-substrate px-3.5 py-3 text-xs
                             leading-relaxed text-body">
                 This size is below our minimum, so each piece is charged at the
@@ -450,23 +414,20 @@ export default function Specify() {
               <div className="sm:flex sm:items-center sm:justify-between sm:gap-4">
                 <div className="min-w-0">
                   <p className="text-[0.7rem] text-body">
-                    {line
-                      ? `${describeLine(line)} · ${line.quantity} piece${line.quantity === 1 ? '' : 's'}`
+                    {quote
+                      ? `${describe(quote)} · ${quote.quantity} piece${quote.quantity === 1 ? '' : 's'}`
                       : 'Set a size to see the price'}
                   </p>
                   <p className="text-xl font-extrabold tabular-nums transition-opacity"
                      style={{ opacity: pricing ? 0.45 : 1 }}>
-                    {/* This item, not the order. With a banner already
-                        in the cart, the order total would price the
-                        flyers at both. */}
-                    {line ? `GHS ${line.total}` : '—'}
+                    {quote ? `GHS ${quote.total}` : '—'}
                   </p>
                 </div>
 
                 <div className="mt-3 sm:mt-0 flex items-center gap-3 sm:gap-4 shrink-0">
                   {canContinue && (
                     <button
-                      onClick={() => navigate('/')}
+                      onClick={() => handleContinue('catalogue')}
                       className="text-xs sm:text-sm font-semibold underline
                                  underline-offset-4 decoration-rule hover:decoration-ink
                                  transition-colors"
@@ -476,7 +437,7 @@ export default function Specify() {
                   )}
                   <button
                     disabled={!canContinue}
-                    onClick={() => navigate('/checkout')}
+                    onClick={() => handleContinue('checkout')}
                     className={`flex-1 sm:flex-none inline-flex items-center
                                 justify-center gap-2 px-5 py-2.5 rounded-lg text-sm
                                 font-semibold transition-colors focus:outline-none
@@ -506,26 +467,13 @@ export default function Specify() {
   )
 }
 
-/**
- * Mirrors the rule the server enforces at payment. Checked here too so
- * the customer is stopped at the step that can fix it, rather than two
- * screens later with no idea what went wrong.
- */
-function artworkReady(service, result) {
-  if (!service.requires_file_upload) return true
-  if (!result) return false
-  if (result.verdict === 'refuse') return false
-  if (result.verdict === 'warn' && !result.warning_accepted) return false
-  return true
-}
-
-function describeLine(line) {
-  const spec = line.specifications || {}
+function describe(quote) {
+  const spec = quote.specifications || {}
   if (spec.width_in && spec.height_in) {
     const area = (Number(spec.width_in) * Number(spec.height_in)) / 144
     return `${area.toFixed(1)} sq ft`
   }
-  return `GHS ${line.unit_price} each`
+  return `GHS ${quote.unit_price} each`
 }
 
 function Shell({ children }) {
