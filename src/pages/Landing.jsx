@@ -1,10 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { getCatalogue, getOrder } from '../api/client'
+import { getCatalogue } from '../api/client'
 import { ServiceIcon } from '../lib/icons.jsx'
-import { loadOrder } from '../lib/order'
-import logo from '../assets/farhat-logo.png'
 import { serviceImage } from '../lib/images'
+import Header from '../components/Header.jsx'
 
 /**
  * What a customer sees on opening.
@@ -15,12 +14,7 @@ import { serviceImage } from '../lib/images'
  * worth knowing before leaving the house.
  *
  * The tiles are built around a photograph. Printing is bought by eye:
- * nobody orders a banner from a description. Until the catalogue has
- * real photographs the grey block stands in, and the page will look
- * thin — that is the photographs missing, not the layout.
- *
- * No account. Asking a stranger to register before they know what a job
- * costs loses them; the order's own token is what brings them back.
+ * nobody orders a banner from a description.
  */
 
 function pricingBasis(unit) {
@@ -40,67 +34,17 @@ export default function Landing() {
   const processed = services.filter(s => s.category === 'PRODUCTION')
   const bySize = unit => unit === 'PER_SQFT' || unit === 'PER_SQCM'
 
-  // What is in the order they are already building, if any. A quiet
-  // failure is right here: an expired or forgotten order should leave
-  // the page working, not show an error on the way in.
-  const saved = loadOrder()
-  const { data: current } = useQuery({
-    queryKey: ['order', saved?.order_number],
-    queryFn: () => getOrder(saved.order_number, saved.access_token).then(r => r.data),
-    enabled: !!saved,
-    retry: false,
-  })
-  const itemCount = current?.line_items?.length ?? 0
-
   return (
     <div className="min-h-screen bg-white text-ink">
 
-      <header className="bg-farhat">
-        {/* A shade darker than the hero below, so the bar reads as its
-            own band rather than floating in the red. */}
-        <div className="bg-black/10">
-          <div className="max-w-4xl mx-auto px-5 py-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-1">
-            <img src={logo} alt="" className="h-11 w-auto" aria-hidden="true" />
-            <p className="text-lg font-bold text-white leading-tight">
-              Farhat<span className="font-normal text-white/85"> Printing Press</span>
-            </p>
-          </div>
+      <Header />
 
-          <nav className="flex items-center gap-4 text-sm text-white/90">
-            <button className="hover:text-white transition-colors">
-              Track an order
-            </button>
-            <button
-              onClick={() => itemCount && navigate('/checkout')}
-              aria-label={
-                itemCount
-                  ? `Your order, ${itemCount} item${itemCount === 1 ? '' : 's'}`
-                  : 'Your order is empty'
-              }
-              className="relative p-1 rounded hover:text-white transition-colors
-                         focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
-                   strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6"
-                   aria-hidden="true">
-                <circle cx="9" cy="20" r="1.4" />
-                <circle cx="18" cy="20" r="1.4" />
-                <path d="M2 3h2.5l2.3 11.5a1.6 1.6 0 0 0 1.6 1.3h8.9a1.6 1.6 0 0 0 1.6-1.3L21 7H5.4" />
-              </svg>
-              <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full
-                               bg-white text-farhat text-[0.6rem] font-bold leading-4
-                               text-center tabular-nums">
-                {itemCount}
-              </span>
-            </button>
-          </nav>
-          </div>
-        </div>
-
-        <div className="max-w-4xl mx-auto px-5 pt-7 pb-8 lg:flex lg:items-center lg:gap-10">
-          <div className="lg:flex-1 lg:min-w-0">
-          <p className="text-2xl sm:text-3xl font-bold text-white leading-tight text-balance">
+      {/* The hero carries on in the same red, so the bar above reads as
+          part of it rather than a separate strip. */}
+      <section className="bg-farhat">
+        <div className="max-w-4xl mx-auto px-5 pt-7 pb-8">
+          <p className="text-2xl sm:text-3xl font-bold text-white leading-tight
+                        text-balance">
             Order your printing <span className="text-gold">before you get here.</span>
           </p>
           <p className="mt-2 text-sm text-white/85 max-w-[46ch]">
@@ -155,9 +99,8 @@ export default function Landing() {
               ))}
             </div>
           )}
-          </div>
         </div>
-      </header>
+      </section>
 
       <main className="max-w-4xl mx-auto px-5 pb-12">
 
@@ -206,6 +149,7 @@ export default function Landing() {
               ) : (
                 <div className="aspect-[4/3] w-full bg-substrate" />
               )}
+
               <div className="flex-1 flex flex-col px-3 py-3">
                 <p className="text-[0.95rem] font-semibold leading-tight">
                   {service.name}
@@ -225,9 +169,6 @@ export default function Landing() {
                     <ServiceIcon name={service.name} className="w-3.5 h-3.5 shrink-0" />
                     {pricingBasis(service.unit)}
                   </span>
-                  {/* Always visible. The tile is a button, and this is
-                      what says so — hiding it until hover means it never
-                      appears on a phone, where most of these are read. */}
                   <span className="shrink-0 w-6 h-6 rounded-full bg-farhat text-white
                                    text-xs leading-none flex items-center justify-center
                                    group-hover:scale-110 transition-transform"

@@ -10,7 +10,7 @@ import { serviceImage } from '../lib/images'
 import SwipeToPay from '../components/SwipeToPay.jsx'
 import BranchChoice from '../components/BranchChoice.jsx'
 import logo from '../assets/farhat-logo.png'
-
+import Header from '../components/Header.jsx'
 /**
  * Finishing an order.
  *
@@ -199,22 +199,7 @@ export default function Checkout() {
   return (
     <div className="min-h-screen bg-white text-ink pb-28 lg:pb-12">
 
-      <header className="bg-farhat">
-        <div className="bg-black/10">
-          <div className="max-w-5xl mx-auto px-5 py-4 flex items-center gap-3">
-            <button onClick={() => navigate('/')} aria-label="Back"
-                    className="shrink-0 text-white/90 hover:text-white text-lg leading-none">
-              ←
-            </button>
-            <div className="flex items-center gap-1.5">
-              <img src={logo} alt="" className="h-9 w-auto" aria-hidden="true" />
-              <p className="text-base font-bold text-white">
-                Farhat<span className="font-normal text-white/85"> Printing Press</span>
-              </p>
-            </div>
-          </div>
-        </div>
-      </header>
+      <Header back />
 
       <main className="max-w-5xl mx-auto px-5 pt-6 lg:flex lg:gap-8 lg:items-start">
 

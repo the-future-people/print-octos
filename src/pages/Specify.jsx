@@ -7,7 +7,7 @@ import { useToast } from '../lib/ToastContext.jsx'
 import { serviceImage } from '../lib/images'
 import ArtworkUpload from '../components/ArtworkUpload.jsx'
 import logo from '../assets/farhat-logo.png'
-
+import Header from '../components/Header.jsx'
 /**
  * Configuring one item.
  *
@@ -220,32 +220,7 @@ export default function Specify() {
   return (
     <div className="min-h-screen bg-white text-ink">
 
-      <header className="bg-farhat">
-        <div className="bg-black/10">
-          <div className="max-w-4xl mx-auto px-5 py-4 flex items-center gap-3">
-            <button onClick={() => navigate('/')} aria-label="Back"
-                    className="shrink-0 text-white/90 hover:text-white text-lg leading-none">
-              ←
-            </button>
-            <div className="flex items-center gap-1.5">
-              <img src={logo} alt="" className="h-9 w-auto" aria-hidden="true" />
-              <p className="text-base font-bold text-white">
-                Farhat<span className="font-normal text-white/85"> Printing Press</span>
-              </p>
-            </div>
-
-            {cart.count > 0 && (
-              <button
-                onClick={() => navigate('/checkout')}
-                className="ml-auto shrink-0 text-xs text-white/90 hover:text-white
-                           underline underline-offset-4 decoration-white/40"
-              >
-                {cart.count} item{cart.count === 1 ? '' : 's'} in your cart
-              </button>
-            )}
-          </div>
-        </div>
-      </header>
+           <Header back />
 
       <main className="max-w-4xl mx-auto px-5 pb-12">
 
