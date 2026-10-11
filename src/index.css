@@ -19,3 +19,9 @@ html {
   from { opacity: 0; transform: translateY(-8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+/* A signal going out and fading. Tailwind's own ping only scales to
+   2× and snaps back; this one travels further and dies away. */
+@keyframes ping {
+  0%   { transform: scale(0.5); opacity: 0.7; }
+  100% { transform: scale(2.4); opacity: 0; }
+}

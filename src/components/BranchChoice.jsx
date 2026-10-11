@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getBranchOptions } from '../api/client'
+import BranchSearching from './BranchSearching.jsx'
 
 /**
  * Where the job will be made, and when it will be ready.
@@ -9,11 +11,20 @@ import { getBranchOptions } from '../api/client'
  * ready tomorrow. Only the customer knows which matters, so both
  * numbers are on the card and they pick.
  *
- * Where nothing can be made, the reasons are shown instead of an empty
- * space — a customer told the machine takes 1900mm can resize, and one
- * told nothing cannot.
+ * When nothing can be made, the branch-by-branch reasons are not what
+ * a customer needs — six lines about machines they have never heard of
+ * tell them nothing they can act on. What helps is which item is the
+ * problem and what to do about it.
  */
-export default function BranchChoice({ order, chosen, onChoose }) {
+
+// A floor, not an addition. An answer that arrives in 200ms would
+// flash and look broken; one that takes three seconds is not made to
+// take five.
+const MINIMUM_WAIT = 2000
+
+export default function BranchChoice({ name, order, chosen, onChoose, onRemoveItem }) {
+  const [settled, setSettled] = useState(false)
+
   const { data, isLoading, isError } = useQuery({
     queryKey: ['branches', order?.order_number],
     queryFn: () =>
@@ -22,12 +33,14 @@ export default function BranchChoice({ order, chosen, onChoose }) {
     retry: false,
   })
 
-  if (isLoading) {
-    return (
-      <p className="mt-3 text-sm text-body">
-        Finding a branch that can make this…
-      </p>
-    )
+  useEffect(() => {
+    setSettled(false)
+    const timer = setTimeout(() => setSettled(true), MINIMUM_WAIT)
+    return () => clearTimeout(timer)
+  }, [order?.order_number])
+
+  if (isLoading || !settled) {
+    return <BranchSearching name={name} />
   }
 
   if (isError) {
@@ -42,23 +55,7 @@ export default function BranchChoice({ order, chosen, onChoose }) {
   const refusals = data?.refusals || []
 
   if (!options.length) {
-    return (
-      <div className="mt-3 rounded-xl border border-farhat/30 bg-farhat/5 px-4 py-3.5">
-        <p className="text-[0.95rem] font-semibold">
-          We can’t make this one today
-        </p>
-        <ul className="mt-2 space-y-1">
-          {refusals.map((r, i) => (
-            <li key={i} className="text-sm leading-relaxed text-body">
-              {r.reason}
-            </li>
-          ))}
-        </ul>
-        <p className="mt-2 text-sm text-body">
-          Change the size above, or call us on 030 000 0000.
-        </p>
-      </div>
-    )
+    return <NothingAvailable refusals={refusals} onRemoveItem={onRemoveItem} />
   }
 
   return (
@@ -73,15 +70,17 @@ export default function BranchChoice({ order, chosen, onChoose }) {
                         focus:outline-none focus-visible:ring-2 focus-visible:ring-ink
                         ${picked
                           ? 'border-farhat bg-farhat/5'
-                          : 'border-rule hover:border-ink'}`}
+                          : 'border-rule bg-white hover:border-ink'}`}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[0.95rem] font-semibold">{option.branch_name}</p>
-                <p className="mt-0.5 text-xs text-body truncate">{option.address}</p>
+                <p className="text-sm font-semibold">{option.branch_name}</p>
+                <p className="mt-0.5 text-xs text-body truncate">
+                  {option.address}
+                </p>
               </div>
               <div className="shrink-0 text-right">
-                <p className="text-[0.95rem] font-semibold tabular-nums">
+                <p className="text-sm font-semibold tabular-nums">
                   {readyLabel(option)}
                 </p>
                 {option.distance_m != null && (
@@ -100,6 +99,87 @@ export default function BranchChoice({ order, chosen, onChoose }) {
           </button>
         )
       })}
+    </div>
+  )
+}
+
+/**
+ * Nothing can make this.
+ *
+ * Deliberately not a list of branches. A customer reading "Madina
+ * Branch has no large format printer" learns nothing they can use —
+ * what they need is which item is stopping the order and the two
+ * things they can actually do about it.
+ *
+ * And not "branches are busy", which would be a lie. Busy improves by
+ * waiting; a missing machine does not, and a customer who waits an
+ * hour on that wording finds the same wall.
+ */
+function NothingAvailable({ refusals, onRemoveItem }) {
+  // The services named in the refusals, which is what the customer
+  // recognises — they chose those, not the machines behind them.
+  const blocked = [...new Set(
+    refusals
+      .map(r => r.service_name)
+      .filter(Boolean),
+  )]
+
+  return (
+    <div className="mt-3 rounded-xl border border-farhat/30 bg-farhat/5 px-4 py-4">
+      <div className="flex gap-2.5">
+        <svg viewBox="0 0 24 24" fill="currentColor"
+             className="w-5 h-5 shrink-0 text-farhat mt-0.5" aria-hidden="true">
+          <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 5a1 1 0 0 1 1 1v5a1 1 0 0 1-2 0V8a1 1 0 0 1 1-1zm0 10.3a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z" />
+        </svg>
+
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-farhat">
+            We can’t make {blocked.length ? 'all of' : ''} this today
+          </p>
+
+          {blocked.length > 0 ? (
+            <p className="mt-1.5 text-sm leading-relaxed text-body">
+              <span className="font-semibold text-ink">
+                {blocked.join(' and ')}
+              </span>
+              {blocked.length === 1 ? ' isn’t' : ' aren’t'} something we can
+              produce at any branch right now.
+            </p>
+          ) : (
+            <p className="mt-1.5 text-sm leading-relaxed text-body">
+              None of our branches can take this order as it stands.
+            </p>
+          )}
+
+          <p className="mt-2 text-sm leading-relaxed text-body">
+            Take it out and we’ll make the rest, or call us on{' '}
+            <a href="tel:0300000000" className="font-semibold text-farhat">
+              030 000 0000
+            </a>{' '}
+            and we’ll sort it out.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3.5 flex gap-2.5">
+        {blocked.length === 1 && onRemoveItem && (
+          <button
+            onClick={() => onRemoveItem(blocked[0])}
+            className="flex-1 px-4 py-2.5 rounded-lg bg-farhat text-white text-sm
+                       font-semibold hover:opacity-90 transition-opacity"
+          >
+            Remove {blocked[0]}
+          </button>
+        )}
+        <a
+          href="tel:0300000000"
+          className="flex-1 px-4 py-2.5 rounded-lg border border-farhat text-farhat
+                     text-sm font-semibold text-center hover:bg-farhat
+                     hover:text-white transition-colors"
+        >
+          Call the shop
+        </a>
+      </div>
     </div>
   )
 }
