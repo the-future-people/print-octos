@@ -134,5 +134,12 @@ export const commitLine = ({
     specifications,
     ...(artworkToken ? { artwork_token: artworkToken } : {}),
   })
+
+  /**
+ * The way back in without the link. The order number and the phone
+ * they gave — neither opens anything alone.
+ */
+export const findOrder = (orderNumber, phone) =>
+  client.post('/api/v1/storefront/find/', { order: orderNumber, phone })
   
 export default client
