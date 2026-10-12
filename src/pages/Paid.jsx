@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { getOrder } from '../api/client'
+import { confirmPayment } from '../api/client'
 import { useCart } from '../lib/CartContext.jsx'
 import Header from '../components/Header.jsx'
 
@@ -50,42 +50,27 @@ export default function Paid() {
       return
     }
 
-    // No cart means this page has already done its work. A paid order
-    // stops being the active cart, so a reload lands here with
-    // nothing left to check — and waiting for something that will
-    // never arrive left customers watching a spinner forever.
-    //
-    // The cart loads from storage after the first render, so this
-    // only counts once it has settled.
-    if (!saved) {
-      if (!cart.loading) setState('done-already')
-      return
-    }
     let live = true
 
+    // Asked of the server, not the browser. A cart that has been
+    // cleared, a tab opened on another device, or a reload an hour
+    // later all have to show the same thing — and the reference in
+    // the address is enough to show it.
     async function ask() {
       if (!live) return
 
       try {
-        const { data } = await getOrder(
-          saved.order_number, saved.access_token,
-        )
+        const { data } = await confirmPayment(reference)
         setOrder(data)
-
-        if (data.is_paid || data.status === 'PAID' || data.status === 'CONVERTED') {
-          setState('paid')
-          return
-        }
+        setState('paid')
+        return
       } catch {
-        // The order may have been cleared, or the network dropped.
-        // Either way, asking again is the right move until the clock
-        // runs out.
+        // Not confirmed yet. Paystack posts to us at the same moment
+        // it redirects them, so the two race and the answer is often
+        // a second behind.
       }
 
       if (Date.now() - started.current > GIVE_UP_AFTER) {
-        // Paystack has the money whatever we can see. Telling someone
-        // their payment failed when it did not is the worse mistake,
-        // so we say it is in hand and let the text message catch up.
         setState('slow')
         return
       }
@@ -95,7 +80,7 @@ export default function Paid() {
 
     ask()
     return () => { live = false }
-  }, [saved, reference, cart.loading])
+  }, [reference])
 
   // Nothing moves on its own. Moving somebody automatically goes
   // wrong in ways nobody sees until they reload — and this is the one
@@ -193,36 +178,6 @@ function Slow({ saved, navigate }) {
  * Not a failure, and not a celebration either: just a way back to
  * something useful.
  */
-function AlreadyDone({ navigate }) {
-  return (
-    <div className="py-16 text-center">
-      <div className="w-14 h-14 mx-auto rounded-full bg-emerald-50
-                      grid place-items-center">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-             className="w-6 h-6 text-emerald-700" aria-hidden="true">
-          <circle cx="12" cy="12" r="9" />
-          <path d="M8.5 12.5l2.5 2.5 4.5-5" />
-        </svg>
-      </div>
-
-      <h1 className="mt-4 text-lg font-bold">This one’s all done</h1>
-      <p className="mt-1.5 text-sm leading-relaxed text-body">
-        We texted you a link to follow it. Tap that, or track it with
-        your order number.
-      </p>
-
-      <button
-        onClick={() => navigate('/track')}
-        className="mt-5 px-5 py-2.5 rounded-lg bg-farhat text-white text-sm
-                   font-semibold hover:opacity-90 transition-opacity"
-      >
-        Track an order
-      </button>
-    </div>
-  )
-}
-
 /**
  * What a customer sees once the money has landed.
  *

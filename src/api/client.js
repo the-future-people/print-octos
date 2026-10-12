@@ -147,5 +147,11 @@ export const findOrder = (orderNumber, phone) =>
  */
 export const openShortLink = code =>
   client.get(`/api/v1/storefront/t/${code}/`)
+/**
+ * What to show somebody who has just paid, from the Paystack
+ * reference alone. Needs nothing the browser has kept.
+ */
+export const confirmPayment = reference =>
+  client.get(`/api/v1/storefront/confirm/${reference}/`)
   
 export default client
