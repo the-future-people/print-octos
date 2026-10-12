@@ -46,7 +46,18 @@ export default function Paid() {
   }, [])
 
   useEffect(() => {
-    if (!saved || !reference) {
+    // The cart loads from storage after the first render, so a null
+    // here on arrival means "not yet", not "nothing". Giving up on it
+    // told customers their payment had failed when it had gone
+    // through perfectly.
+    if (!saved) {
+      if (Date.now() - started.current > GIVE_UP_AFTER) {
+        setState('unknown')
+      }
+      return
+    }
+
+    if (!reference) {
       setState('unknown')
       return
     }
@@ -83,7 +94,7 @@ export default function Paid() {
 
     ask()
     return () => { live = false }
-  }, [saved, reference])
+  }, [saved, reference, cart.loading])
 
   // Paid, and on to the order. Long enough to read, short enough not
   // to strand anyone.
