@@ -25,3 +25,26 @@ html {
   0%   { transform: scale(0.5); opacity: 0.7; }
   100% { transform: scale(2.4); opacity: 0; }
 }
+/* The tick draws rather than appears. One that arrives whole reads as
+   a picture; one that draws reads as something that just happened. */
+@keyframes draw-ring {
+  from { stroke-dashoffset: 170; }
+  to   { stroke-dashoffset: 0; }
+}
+
+@keyframes draw-tick {
+  from { stroke-dashoffset: 36; }
+  to   { stroke-dashoffset: 0; }
+}
+
+@keyframes pop-in {
+  0%   { transform: scale(0.82); opacity: 0; }
+  60%  { transform: scale(1.04); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* How long before we take them to their order. */
+@keyframes fill-bar {
+  from { width: 0; }
+  to   { width: 100%; }
+}

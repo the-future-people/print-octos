@@ -12,6 +12,7 @@ export default function App() {
       <Route path="/checkout" element={<Checkout />} />
       <Route path="/track" element={<Track />} />
       <Route path="/track/:orderNumber" element={<Track />} />
+      <Route path="/paid" element={<Paid />} />
     </Routes>
   )
 }
