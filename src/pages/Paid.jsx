@@ -25,7 +25,6 @@ import Header from '../components/Header.jsx'
 // than keep them watching — Paystack took the money either way.
 const GIVE_UP_AFTER = 12_000
 const ASK_EVERY = 1_500
-const LINGER = 3_000
 
 export default function Paid() {
   const [params] = useSearchParams()
@@ -98,30 +97,25 @@ export default function Paid() {
     return () => { live = false }
   }, [saved, reference, cart.loading])
 
-  // Paid, and on to the order. Long enough to read, short enough not
-  // to strand anyone.
+  // Nothing moves on its own. Moving somebody automatically goes
+  // wrong in ways nobody sees until they reload — and this is the one
+  // page where being stranded costs the most trust.
+  //
+  // The cart is cleared the moment we know it is paid, though: a paid
+  // order has stopped being a cart, and the next thing they order
+  // should start a new one rather than join work already on the floor.
   useEffect(() => {
-    if (state !== 'paid' || !saved) return
-
-    const timer = setTimeout(() => {
-      // The cart is spent. The next thing they order starts a new one
-      // rather than joining something already on the floor.
-      cart.forget()
-      navigate(
-        `/track/${saved.order_number}?t=${saved.access_token}`,
-        { replace: true },
-      )
-    }, LINGER)
-
-    return () => clearTimeout(timer)
-  }, [state, saved, navigate, cart])
+    if (state === 'paid') cart.forget()
+  }, [state, cart])
 
   return (
     <div className="min-h-screen bg-white text-ink">
       <Header />
       <main className="max-w-md mx-auto px-5">
         {state === 'checking' && <Checking />}
-        {state === 'paid' && <Done order={order} />}
+        {state === 'paid' && (
+          <Done order={order} saved={saved} navigate={navigate} />
+        )}
         {state === 'slow' && <Slow saved={saved} navigate={navigate} />}
         {state === 'unknown' && <Unknown navigate={navigate} />}
         {state === 'done-already' && <AlreadyDone navigate={navigate} />}
@@ -142,55 +136,6 @@ function Checking() {
       <p className="mt-1 text-sm text-body">
         One moment — don’t close this page.
       </p>
-    </div>
-  )
-}
-
-function Done({ order }) {
-  return (
-    <div className="py-16 text-center">
-      {/* Drawn rather than dropped in: a tick that arrives all at once
-          reads as a picture, and one that draws reads as something
-          that just happened. */}
-      <svg viewBox="0 0 64 64" className="w-16 h-16 mx-auto" aria-hidden="true">
-        <circle cx="32" cy="32" r="27" fill="none" stroke="#047857"
-                strokeWidth="3.5" strokeLinecap="round"
-                transform="rotate(-90 32 32)"
-                className="[stroke-dasharray:170] animate-[draw-ring_700ms_ease-out_forwards]" />
-        <path d="M20 33 L28.5 41 L45 24" fill="none" stroke="#047857"
-              strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"
-              className="[stroke-dasharray:36] [stroke-dashoffset:36]
-                         animate-[draw-tick_400ms_550ms_ease-out_forwards]" />
-      </svg>
-
-      <div className="animate-[pop-in_500ms_200ms_ease-out_both]">
-        <h1 className="mt-4 text-xl font-extrabold">Paid — thank you</h1>
-        {order && (
-          <p className="mt-1.5 text-sm text-body tabular-nums">
-            GHS {order.total} · {order.order_number}
-          </p>
-        )}
-
-        {order?.branch && (
-          <div className="mt-5 mx-auto max-w-[260px] rounded-xl border border-rule
-                          bg-substrate/40 px-4 py-3 text-left">
-            <p className="text-xs text-body">Collect at</p>
-            <p className="mt-0.5 text-sm font-semibold">{order.branch.name}</p>
-            {order.promised_for && (
-              <p className="mt-1 text-xs font-semibold text-emerald-700">
-                Ready about {readyLabel(order.promised_for)}
-              </p>
-            )}
-          </div>
-        )}
-
-        <p className="mt-6 text-xs text-body">Taking you to your order…</p>
-        <div className="mt-2 mx-auto w-44 h-[3px] rounded-full bg-substrate
-                        overflow-hidden">
-          <div className="h-full bg-farhat rounded-full
-                          animate-[fill-bar_3000ms_linear_forwards]" />
-        </div>
-      </div>
     </div>
   )
 }
@@ -278,6 +223,138 @@ function AlreadyDone({ navigate }) {
   )
 }
 
+/**
+ * What a customer sees once the money has landed.
+ *
+ * The end of the journey rather than a step on the way to one, so it
+ * carries everything they would otherwise have to go looking for: the
+ * amount, where to collect, when it will be ready, and the link that
+ * opens their order later.
+ *
+ * The link is here because the text message can be slow. A customer
+ * who can copy it now never has to wait for one, and one who misses
+ * it entirely still has the number to quote on the phone.
+ */
+function Done({ order, saved, navigate }) {
+  const [copied, setCopied] = useState(false)
+
+  const link = order?.short_code
+    ? `print-octos.vercel.app/t/${order.short_code}`
+    : null
+
+  async function copy() {
+    if (!link) return
+    try {
+      await navigator.clipboard.writeText(`https://${link}`)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard access can be refused, and there is nothing useful
+      // to say about it — the link is on screen to be read either way.
+    }
+  }
+
+  return (
+    <div className="py-14 text-center">
+      <svg viewBox="0 0 64 64" className="w-16 h-16 mx-auto" aria-hidden="true">
+        <circle cx="32" cy="32" r="27" fill="none" stroke="#047857"
+                strokeWidth="3.5" strokeLinecap="round"
+                transform="rotate(-90 32 32)"
+                className="[stroke-dasharray:170]
+                           animate-[draw-ring_700ms_ease-out_forwards]" />
+        <path d="M20 33 L28.5 41 L45 24" fill="none" stroke="#047857"
+              strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"
+              className="[stroke-dasharray:36] [stroke-dashoffset:36]
+                         animate-[draw-tick_400ms_550ms_ease-out_forwards]" />
+      </svg>
+
+      <div className="animate-[pop-in_500ms_200ms_ease-out_both]">
+        <h1 className="mt-4 text-xl font-extrabold">Paid — thank you</h1>
+        {order && (
+          <p className="mt-1.5 text-sm text-body tabular-nums">
+            GHS {order.total} · {order.order_number}
+          </p>
+        )}
+
+        {order?.branch && (
+          <div className="mt-5 rounded-xl border border-rule bg-substrate/40
+                          px-4 py-3.5 text-left">
+            <p className="text-xs text-body">Collect at</p>
+            <p className="mt-0.5 text-[0.95rem] font-semibold">
+              {order.branch.name}
+            </p>
+            {order.branch.address && (
+              <p className="mt-0.5 text-xs text-body">{order.branch.address}</p>
+            )}
+            {order.promised_for && (
+              <p className="mt-2 text-sm font-semibold text-emerald-700">
+                Ready about {readyLabel(order.promised_for)}
+              </p>
+            )}
+
+            {link && (
+              <div className="mt-3.5 pt-3.5 border-t border-rule">
+                <p className="text-xs text-body">Your tracking link</p>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <code className="flex-1 min-w-0 text-xs break-all">
+                    {link}
+                  </code>
+                  <button
+                    onClick={copy}
+                    className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5
+                               rounded-md border border-rule text-xs font-semibold
+                               hover:border-ink transition-colors"
+                  >
+                    {copied ? (
+                      <>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             strokeWidth="2.4" strokeLinecap="round"
+                             strokeLinejoin="round" className="w-3.5 h-3.5
+                             text-emerald-700" aria-hidden="true">
+                          <path d="M5 12.5l4.5 4.5L19 7" />
+                        </svg>
+                        Copied
+                      </>
+                    ) : (
+                      <>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             strokeWidth="1.7" strokeLinecap="round"
+                             strokeLinejoin="round" className="w-3.5 h-3.5"
+                             aria-hidden="true">
+                          <rect x="9" y="9" width="12" height="12" rx="2" />
+                          <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+                        </svg>
+                        Copy
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <button
+          onClick={() => {
+            if (saved) {
+              navigate(`/track/${saved.order_number}?t=${saved.access_token}`)
+            } else if (order?.short_code) {
+              navigate(`/t/${order.short_code}`)
+            }
+          }}
+          className="mt-5 w-full px-5 py-3 rounded-lg bg-farhat text-white text-sm
+                     font-semibold hover:opacity-90 transition-opacity"
+        >
+          See my order
+        </button>
+
+        <p className="mt-3 text-xs text-body">
+          We’re texting this link to you as well.
+        </p>
+      </div>
+    </div>
+  )
+}
 /**
  * They cancelled, or arrived here with nothing we recognise.
  *
