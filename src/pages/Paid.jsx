@@ -46,29 +46,31 @@ export default function Paid() {
   }, [])
 
   useEffect(() => {
-    // The cart loads from storage after the first render, so a null
-    // here on arrival means "not yet", not "nothing". Giving up on it
-    // told customers their payment had failed when it had gone
-    // through perfectly.
-    if (!saved) {
-      if (Date.now() - started.current > GIVE_UP_AFTER) {
-        setState('unknown')
-      }
-      return
-    }
-
     if (!reference) {
       setState('unknown')
       return
     }
 
+    // No cart means this page has already done its work. A paid order
+    // stops being the active cart, so a reload lands here with
+    // nothing left to check — and waiting for something that will
+    // never arrive left customers watching a spinner forever.
+    //
+    // The cart loads from storage after the first render, so this
+    // only counts once it has settled.
+    if (!saved) {
+      if (!cart.loading) setState('done-already')
+      return
+    }
     let live = true
 
     async function ask() {
       if (!live) return
 
       try {
-        const { data } = await getOrder(saved.order_number, saved.access_token)
+        const { data } = await getOrder(
+          saved.order_number, saved.access_token,
+        )
         setOrder(data)
 
         if (data.is_paid || data.status === 'PAID' || data.status === 'CONVERTED') {
@@ -122,6 +124,7 @@ export default function Paid() {
         {state === 'paid' && <Done order={order} />}
         {state === 'slow' && <Slow saved={saved} navigate={navigate} />}
         {state === 'unknown' && <Unknown navigate={navigate} />}
+        {state === 'done-already' && <AlreadyDone navigate={navigate} />}
       </main>
     </div>
   )
@@ -234,6 +237,43 @@ function Slow({ saved, navigate }) {
           030 000 0000
         </a>
       </p>
+    </div>
+  )
+}
+
+/**
+ * They have been here before — paid, shown, and moved on. A reload
+ * lands back on this URL with the cart long since cleared.
+ *
+ * Not a failure, and not a celebration either: just a way back to
+ * something useful.
+ */
+function AlreadyDone({ navigate }) {
+  return (
+    <div className="py-16 text-center">
+      <div className="w-14 h-14 mx-auto rounded-full bg-emerald-50
+                      grid place-items-center">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+             className="w-6 h-6 text-emerald-700" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M8.5 12.5l2.5 2.5 4.5-5" />
+        </svg>
+      </div>
+
+      <h1 className="mt-4 text-lg font-bold">This one’s all done</h1>
+      <p className="mt-1.5 text-sm leading-relaxed text-body">
+        We texted you a link to follow it. Tap that, or track it with
+        your order number.
+      </p>
+
+      <button
+        onClick={() => navigate('/track')}
+        className="mt-5 px-5 py-2.5 rounded-lg bg-farhat text-white text-sm
+                   font-semibold hover:opacity-90 transition-opacity"
+      >
+        Track an order
+      </button>
     </div>
   )
 }
