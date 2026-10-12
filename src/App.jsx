@@ -13,6 +13,7 @@ export default function App() {
       <Route path="/track" element={<Track />} />
       <Route path="/track/:orderNumber" element={<Track />} />
       <Route path="/paid" element={<Paid />} />
+      <Route path="/t/:code" element={<ShortLink />} />
     </Routes>
   )
 }

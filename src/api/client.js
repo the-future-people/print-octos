@@ -141,5 +141,11 @@ export const commitLine = ({
  */
 export const findOrder = (orderNumber, phone) =>
   client.post('/api/v1/storefront/find/', { order: orderNumber, phone })
+
+/**
+ * The short code from a text message, traded for the real token.
+ */
+export const openShortLink = code =>
+  client.get(`/api/v1/storefront/t/${code}/`)
   
 export default client
