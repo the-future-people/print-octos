@@ -211,7 +211,9 @@ function Section({ title, note, services, onOpen }) {
 
 function Tile({ service, onOpen }) {
   const soon = service.available === false
-  const photo = serviceImage(service.name)
+  // The photo is found by the service's own name, which stays put when
+  // the name customers see is tidied.
+  const photo = serviceImage(service.base_name || service.name)
 
   return (
     <button

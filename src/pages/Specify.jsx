@@ -41,7 +41,17 @@ export default function Specify() {
     queryFn: () => getCatalogue().then(r => r.data),
   })
 
-  const service = services.find(s => String(s.id) === String(serviceId))
+  // A product may come in versions (front only, front and back), each a
+  // service of its own with its own price. The address can name either;
+  // the page shows the product, and the chosen version is what is priced
+  // and ordered.
+  const product = services.find(
+    s => String(s.id) === String(serviceId)
+      || (s.variants || []).some(v => String(v.id) === String(serviceId)),
+  )
+  const [variantId, setVariantId] = useState(null)
+  const variants = product?.variants || []
+  const service = variants.find(v => v.id === variantId) || product
 
   const [values, setValues] = useState({})
   const [quantity, setQuantity] = useState(1)
@@ -72,25 +82,40 @@ export default function Specify() {
   const byArea = service?.unit === 'PER_SQFT' || service?.unit === 'PER_SQCM'
   const comingSoon = service && service.available === false
 
-  // A fresh form for a fresh item. Switching service, or coming back
+  // A fresh form for a fresh item. Switching product, or coming back
   // after adding something, starts over — the item that was added
   // lives in the cart now, and that is where it is changed.
   useEffect(() => {
-    if (!service) return
+    if (!product) return
+    const named = (product.variants || []).find(v => String(v.id) === String(serviceId))
+    setVariantId(named?.id ?? product.variants?.[0]?.id ?? null)
     setValues(
       Object.fromEntries(
-        (service.spec_template || [])
+        (product.spec_template || [])
           .filter(f => f.key !== 'quantity')
           .map(f => [f.key, f.default ?? '']),
       ),
     )
-    setQuantity(service.spec_template?.find(f => f.key === 'quantity')?.min ?? 1)
+    setQuantity(product.spec_template?.find(f => f.key === 'quantity')?.min ?? 1)
     setChosen([])
     setQuote(null)
     setArtwork(null)
     setProblem('')
     commitKey.current = crypto.randomUUID().replace(/-/g, '')
-  }, [service])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product?.id])
+
+  // Changing the sides keeps everything the customer entered. The
+  // artwork was checked for the other version, so it is checked again,
+  // and finishing the new version does not offer is let go.
+  function chooseVariant(id) {
+    if (id === variantId) return
+    const next = variants.find(v => v.id === id)
+    setVariantId(id)
+    setArtwork(null)
+    setChosen(c => c.filter(a => (next?.addons || []).some(x => x.id === a && x.available)))
+    commitKey.current = crypto.randomUUID().replace(/-/g, '')
+  }
 
   const sizeMissing = fields.some(
     f => f.required && (values[f.key] === '' || values[f.key] == null),
@@ -152,7 +177,7 @@ export default function Specify() {
 
       cart.adopt(data)
       toast.show(
-        `${service.name} added to your cart`,
+        `${product.name} added to your cart`,
         'We’ll keep it for 7 days — pick up where you left off any time.',
       )
 
@@ -201,7 +226,7 @@ export default function Specify() {
     return <Shell><p className="py-12 text-sm text-body">Loading…</p></Shell>
   }
 
-  if (!service) {
+  if (!product || !service) {
     return (
       <Shell>
         <p className="py-12 text-sm text-body">
@@ -215,7 +240,7 @@ export default function Specify() {
     )
   }
 
-  const photo = serviceImage(service.name)
+  const photo = serviceImage(product.base_name || product.name)
   const needsFile = service.requires_file_upload
 
   const artworkReady =
@@ -244,7 +269,7 @@ export default function Specify() {
 
           <div className="flex gap-3 sm:block sm:w-[150px] lg:w-[200px] shrink-0">
             {photo ? (
-              <img src={photo} alt={service.name}
+              <img src={photo} alt={product.name}
                    className="w-20 h-20 sm:w-full sm:h-auto sm:aspect-[4/3]
                               object-cover rounded-xl border border-rule shrink-0" />
             ) : (
@@ -253,9 +278,9 @@ export default function Specify() {
             )}
 
             <div className="min-w-0 sm:hidden">
-              <h1 className="text-lg font-bold leading-tight">{service.name}</h1>
+              <h1 className="text-lg font-bold leading-tight">{product.name}</h1>
               <p className="mt-1 text-xs leading-snug text-body line-clamp-3">
-                {service.description}
+                {product.description}
               </p>
             </div>
           </div>
@@ -263,9 +288,9 @@ export default function Specify() {
           <div className="mt-4 sm:mt-0 sm:flex-1 sm:min-w-0">
 
             <div className="hidden sm:block">
-              <h1 className="text-xl lg:text-2xl font-bold">{service.name}</h1>
+              <h1 className="text-xl lg:text-2xl font-bold">{product.name}</h1>
               <p className="mt-2 text-sm leading-relaxed text-body">
-                {service.description}
+                {product.description}
               </p>
             </div>
 
@@ -291,6 +316,34 @@ export default function Specify() {
                 </svg>
                 {byArea ? 'How big?' : 'Your order'}
               </p>
+
+              {variants.length > 1 && (
+                <div className="mt-3">
+                  <span className="block mb-1.5 text-xs text-body">Sides</span>
+                  <div role="radiogroup" aria-label="Sides"
+                       className="inline-flex p-1 rounded-lg bg-substrate gap-1">
+                    {variants.map(v => {
+                      const on = v.id === service.id
+                      return (
+                        <button
+                          key={v.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={on}
+                          disabled={v.available === false}
+                          onClick={() => chooseVariant(v.id)}
+                          className={`px-4 py-2 rounded-md text-sm font-semibold transition-colors
+                                      focus:outline-none focus-visible:ring-2 focus-visible:ring-ink
+                                      disabled:opacity-40 disabled:cursor-not-allowed
+                                      ${on ? 'bg-white text-ink shadow-sm' : 'text-body hover:text-ink'}`}
+                        >
+                          {v.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
 
               {fields.length > 0 && (
                 <div className="mt-3 grid grid-cols-2 gap-3">
@@ -480,7 +533,7 @@ export default function Specify() {
               {quote?.addons?.length > 0 && (
                 <div className="mb-2 pb-2 border-b border-rule space-y-1 text-xs text-body">
                   <div className="flex justify-between gap-3">
-                    <span>{service.name}</span>
+                    <span>{product.name}{variants.length > 1 ? ` · ${service.label}` : ''}</span>
                     <span className="tabular-nums">GHS {quote.base_total}</span>
                   </div>
                   {quote.addons.map(a => (
