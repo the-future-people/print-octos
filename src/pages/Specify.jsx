@@ -68,9 +68,14 @@ export default function Specify() {
   // again.
   const commitKey = useRef(crypto.randomUUID().replace(/-/g, ''))
 
+  // Pages are never typed online: the file says how many it has. The
+  // counter still asks, because there the job arrives as paper.
+  const fromFile = !!service?.counts_pages
   const fields = useMemo(
-    () => (service?.spec_template || []).filter(f => f.key !== 'quantity'),
-    [service],
+    () => (service?.spec_template || []).filter(
+      f => f.key !== 'quantity' && !(fromFile && f.key === 'pages'),
+    ),
+    [service, fromFile],
   )
 
   const quantityField = useMemo(
@@ -92,7 +97,7 @@ export default function Specify() {
     setValues(
       Object.fromEntries(
         (product.spec_template || [])
-          .filter(f => f.key !== 'quantity')
+          .filter(f => f.key !== 'quantity' && !(product.counts_pages && f.key === 'pages'))
           .map(f => [f.key, f.default ?? '']),
       ),
     )
@@ -121,12 +126,19 @@ export default function Specify() {
     f => f.required && (values[f.key] === '' || values[f.key] == null),
   )
 
+  // Sheets per copy, from the file's pages and the sides. The server
+  // works this out again from the file itself when the item is added;
+  // this is only so the customer sees the price first.
+  const pageCount = artwork ? Math.max(1, Number(artwork.page_count) || 1) : null
+  const sheets = pageCount ? Math.ceil(pageCount / (service?.pages_per_sheet || 1)) : null
+  const waitingForFile = fromFile && !sheets
+
   // Priced after a pause rather than on every keystroke, and priced by
   // the server: the browser does no arithmetic, because two
   // implementations of one sum always drift apart. Finishing is part
   // of the price, so ticking one asks again.
   useEffect(() => {
-    if (!service || sizeMissing || comingSoon) {
+    if (!service || sizeMissing || comingSoon || waitingForFile) {
       setQuote(null)
       return
     }
@@ -135,7 +147,11 @@ export default function Specify() {
       setPricing(true)
       setProblem('')
 
-      quoteLine(service.id, Number(quantity) || 1, values, chosen)
+      quoteLine(
+        service.id, Number(quantity) || 1,
+        fromFile ? { ...values, pages: sheets } : values,
+        chosen,
+      )
         .then(r => setQuote(r.data))
         .catch(err => {
           setQuote(null)
@@ -148,7 +164,7 @@ export default function Specify() {
     }, 400)
 
     return () => clearTimeout(timer)
-  }, [service, values, quantity, chosen, sizeMissing, comingSoon])
+  }, [service, values, quantity, chosen, sizeMissing, comingSoon, waitingForFile, sheets, fromFile])
 
   // The artwork was judged against a size. Changing the size retires
   // the verdict — a file fine on a small print is refused across six
@@ -549,9 +565,13 @@ export default function Specify() {
                   <p className="text-[0.7rem] text-body">
                     {comingSoon
                       ? 'Not available to order yet'
-                      : quote
-                        ? `${describe(quote)} · ${quote.quantity} ${unitWord(quantityField, quote.quantity)}`
-                        : 'Fill in the details to see the price'}
+                      : waitingForFile
+                        ? `GHS ${service.price ?? '—'} per sheet · upload your file to see the total`
+                        : quote
+                          ? fromFile
+                            ? `${pageCount} page${pageCount === 1 ? '' : 's'} · ${sheets} sheet${sheets === 1 ? '' : 's'} a copy · ${quote.quantity} ${unitWord(quantityField, quote.quantity)}`
+                            : `${describe(quote)} · ${quote.quantity} ${unitWord(quantityField, quote.quantity)}`
+                          : 'Fill in the details to see the price'}
                   </p>
                   <p className="text-xl font-extrabold tabular-nums transition-opacity"
                      style={{ opacity: pricing ? 0.45 : 1 }}>
