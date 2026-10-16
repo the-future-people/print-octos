@@ -457,7 +457,7 @@ function CartLine({ line, order, busy, onStep, onRemove }) {
           <ul className="mt-1 space-y-0.5">
             {line.addons.map(a => (
               <li key={a.service} className="flex justify-between gap-3 text-xs text-body">
-                <span>+ {a.service_name} × {a.quantity}</span>
+                <span>+ {a.service_name}{a.detail ? ` (${a.detail})` : ''} × {a.quantity}</span>
                 <span className="tabular-nums">GHS {a.total}</span>
               </li>
             ))}

@@ -554,7 +554,7 @@ export default function Specify() {
                   </div>
                   {quote.addons.map(a => (
                     <div key={a.service} className="flex justify-between gap-3">
-                      <span>+ {a.service_name} × {a.quantity}</span>
+                      <span>+ {a.service_name}{a.detail ? ` (${a.detail})` : ''} × {a.quantity}</span>
                       <span className="tabular-nums">GHS {a.total}</span>
                     </div>
                   ))}
