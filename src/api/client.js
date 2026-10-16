@@ -81,7 +81,7 @@ export const getBranchOptions = (orderNumber, token, location) =>
     },
   })
 
-  /**
+/**
  * Judges artwork against a size, and commits nothing.
  *
  * Comes back with a signed verdict that the commit will check against
@@ -107,13 +107,15 @@ export const checkArtwork = (file, serviceId, specifications, onProgress) => {
 }
 
 /**
- * What a line would cost, without committing it.
+ * What a line would cost, without committing it. Finishing chosen
+ * (lamination, binding, an envelope) is priced with it.
  */
-export const quoteLine = (serviceId, quantity, specifications) =>
+export const quoteLine = (serviceId, quantity, specifications, addons = []) =>
   client.post('/api/v1/storefront/quote/', {
     service: serviceId,
     quantity,
     specifications,
+    addons,
   })
 
 /**
@@ -124,7 +126,7 @@ export const quoteLine = (serviceId, quantity, specifications) =>
  * banner twice.
  */
 export const commitLine = ({
-  key, orderNumber, token, serviceId, quantity, specifications, artworkToken,
+  key, orderNumber, token, serviceId, quantity, specifications, addons = [], artworkToken,
 }) =>
   client.post('/api/v1/storefront/commit/', {
     idempotency_key: key,
@@ -132,10 +134,11 @@ export const commitLine = ({
     service: serviceId,
     quantity,
     specifications,
+    addons,
     ...(artworkToken ? { artwork_token: artworkToken } : {}),
   })
 
-  /**
+/**
  * The way back in without the link. The order number and the phone
  * they gave — neither opens anything alone.
  */
@@ -147,11 +150,12 @@ export const findOrder = (orderNumber, phone) =>
  */
 export const openShortLink = code =>
   client.get(`/api/v1/storefront/t/${code}/`)
+
 /**
  * What to show somebody who has just paid, from the Paystack
  * reference alone. Needs nothing the browser has kept.
  */
 export const confirmPayment = reference =>
   client.get(`/api/v1/storefront/confirm/${reference}/`)
-  
+
 export default client

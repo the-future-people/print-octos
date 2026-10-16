@@ -62,6 +62,9 @@ export default function Checkout() {
           service: l.service,
           quantity: l.quantity,
           specifications: l.specifications,
+          // The finishing chosen for this line, so changing the
+          // quantity re-prices it rather than dropping it.
+          addons: l.addons || [],
         })),
       })
       await refetch()
@@ -449,6 +452,17 @@ function CartLine({ line, order, busy, onStep, onRemove }) {
         </div>
 
         {size && <p className="mt-0.5 text-xs text-body">{size}</p>}
+
+        {line.addons?.length > 0 && (
+          <ul className="mt-1 space-y-0.5">
+            {line.addons.map(a => (
+              <li key={a.service} className="flex justify-between gap-3 text-xs text-body">
+                <span>+ {a.service_name} × {a.quantity}</span>
+                <span className="tabular-nums">GHS {a.total}</span>
+              </li>
+            ))}
+          </ul>
+        )}
 
         {artwork && <ArtworkLine artwork={artwork} />}
 

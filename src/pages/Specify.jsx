@@ -6,15 +6,15 @@ import { useCart } from '../lib/CartContext.jsx'
 import { useToast } from '../lib/ToastContext.jsx'
 import { serviceImage } from '../lib/images'
 import ArtworkUpload from '../components/ArtworkUpload.jsx'
-import logo from '../assets/farhat-logo.png'
 import Header from '../components/Header.jsx'
 /**
  * Configuring one item.
  *
  * Nothing here touches the server's idea of what has been ordered. The
- * size, the quantity and the artwork all live in this page until the
- * customer presses Continue — so someone who opens a banner, looks at
- * the price and wanders back to the catalogue leaves nothing behind.
+ * size, the quantity, the finishing and the artwork all live in this
+ * page until the customer presses Continue — so someone who opens a
+ * banner, looks at the price and wanders back to the catalogue leaves
+ * nothing behind.
  *
  * That was the whole trouble with the previous version: it created an
  * order the moment the page opened, which meant phantom cart items,
@@ -25,6 +25,10 @@ import Header from '../components/Header.jsx'
  * nothing. The check hands back a signed verdict that the commit
  * verifies against the file and the size it was judged at — so a
  * customer cannot pass a good file and send something else.
+ *
+ * Finishing (lamination, binding, an envelope) is chosen here too, and
+ * priced by the server with everything else. Something not available
+ * yet is shown, so the customer knows it exists, but cannot be ticked.
  */
 export default function Specify() {
   const { serviceId } = useParams()
@@ -41,6 +45,7 @@ export default function Specify() {
 
   const [values, setValues] = useState({})
   const [quantity, setQuantity] = useState(1)
+  const [chosen, setChosen] = useState([])
   const [quote, setQuote] = useState(null)
   const [pricing, setPricing] = useState(false)
   const [artwork, setArtwork] = useState(null)
@@ -63,7 +68,9 @@ export default function Specify() {
     [service],
   )
 
+  const addons = service?.addons || []
   const byArea = service?.unit === 'PER_SQFT' || service?.unit === 'PER_SQCM'
+  const comingSoon = service && service.available === false
 
   // A fresh form for a fresh item. Switching service, or coming back
   // after adding something, starts over — the item that was added
@@ -78,6 +85,7 @@ export default function Specify() {
       ),
     )
     setQuantity(service.spec_template?.find(f => f.key === 'quantity')?.min ?? 1)
+    setChosen([])
     setQuote(null)
     setArtwork(null)
     setProblem('')
@@ -90,9 +98,10 @@ export default function Specify() {
 
   // Priced after a pause rather than on every keystroke, and priced by
   // the server: the browser does no arithmetic, because two
-  // implementations of one sum always drift apart.
+  // implementations of one sum always drift apart. Finishing is part
+  // of the price, so ticking one asks again.
   useEffect(() => {
-    if (!service || sizeMissing) {
+    if (!service || sizeMissing || comingSoon) {
       setQuote(null)
       return
     }
@@ -101,7 +110,7 @@ export default function Specify() {
       setPricing(true)
       setProblem('')
 
-      quoteLine(service.id, Number(quantity) || 1, values)
+      quoteLine(service.id, Number(quantity) || 1, values, chosen)
         .then(r => setQuote(r.data))
         .catch(err => {
           setQuote(null)
@@ -114,7 +123,7 @@ export default function Specify() {
     }, 400)
 
     return () => clearTimeout(timer)
-  }, [service, values, quantity, sizeMissing])
+  }, [service, values, quantity, chosen, sizeMissing, comingSoon])
 
   // The artwork was judged against a size. Changing the size retires
   // the verdict — a file fine on a small print is refused across six
@@ -137,6 +146,7 @@ export default function Specify() {
         serviceId: service.id,
         quantity: Number(quantity) || 1,
         specifications: values,
+        addons: chosen,
         artworkToken: artwork?.token,
       })
 
@@ -182,6 +192,11 @@ export default function Specify() {
     setQuantity(q => Math.max(min, (Number(q) || min) + by * step))
   }
 
+  function toggleAddon(addon) {
+    if (!addon.available) return
+    setChosen(c => (c.includes(addon.id) ? c.filter(id => id !== addon.id) : [...c, addon.id]))
+  }
+
   if (loadingCatalogue) {
     return <Shell><p className="py-12 text-sm text-body">Loading…</p></Shell>
   }
@@ -207,11 +222,12 @@ export default function Specify() {
     !needsFile ||
     (artwork && artwork.verdict !== 'refuse' && artwork.token)
 
-  const canContinue = !!quote && artworkReady && !committing
+  const canContinue = !comingSoon && !!quote && artworkReady && !committing
 
   const continueLabel =
-    committing ? 'Adding…'
-    : sizeMissing ? 'Enter the size to continue'
+    comingSoon ? 'Coming soon'
+    : committing ? 'Adding…'
+    : sizeMissing ? 'Enter the details to continue'
     : !quote ? 'Working out the price…'
     : needsFile && !artwork ? 'Upload artwork to continue'
     : needsFile && artwork?.verdict === 'refuse' ? 'Send different artwork'
@@ -220,7 +236,7 @@ export default function Specify() {
   return (
     <div className="min-h-screen bg-white text-ink">
 
-           <Header back />
+      <Header back />
 
       <main className="max-w-4xl mx-auto px-5 pb-12">
 
@@ -253,9 +269,19 @@ export default function Specify() {
               </p>
             </div>
 
-            {/* ── The size ─────────────────────────────────────── */}
+            {comingSoon && (
+              <div className="mt-5 rounded-xl border border-gold/50 bg-gold/10 px-4 py-3">
+                <p className="text-sm font-semibold">Coming soon</p>
+                <p className="mt-1 text-xs leading-relaxed text-body">
+                  We’re getting ready to make this. Check back soon, or walk in
+                  and ask about it.
+                </p>
+              </div>
+            )}
 
-            <div className="mt-5 pt-5 border-t border-rule">
+            {/* ── The details ──────────────────────────────────── */}
+
+            <div className={`mt-5 pt-5 border-t border-rule ${comingSoon ? 'opacity-50 pointer-events-none' : ''}`}>
               <p className="flex items-center gap-2 text-[0.95rem] font-semibold">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                      strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
@@ -263,7 +289,7 @@ export default function Specify() {
                   <path d="M3 9h18v6H3z" />
                   <path d="M7 9v3M11 9v3M15 9v3M19 9v3" />
                 </svg>
-                How big?
+                {byArea ? 'How big?' : 'Your order'}
               </p>
 
               {fields.length > 0 && (
@@ -305,7 +331,9 @@ export default function Specify() {
 
               <div className="mt-4">
                 <span className="block mb-1.5 text-xs text-body">
-                  How many?
+                  {quantityField?.label && quantityField.label !== 'Quantity'
+                    ? quantityField.label
+                    : 'How many?'}
                   {quantityField?.step > 1 && (
                     <span className="text-body/70">
                       {' '}· in {quantityField.step}s
@@ -348,9 +376,72 @@ export default function Specify() {
               )}
             </div>
 
+            {/* ── Finishing ────────────────────────────────────── */}
+
+            {addons.length > 0 && !comingSoon && (
+              <div className="mt-5 pt-5 border-t border-rule">
+                <p className="flex items-center gap-2 text-[0.95rem] font-semibold">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                       strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
+                       className="w-4 h-4 text-farhat" aria-hidden="true">
+                    <path d="M12 3l2.5 5 5.5.8-4 3.9.9 5.5L12 15.6 7.1 18.2l.9-5.5-4-3.9 5.5-.8z" />
+                  </svg>
+                  Finishing
+                  <span className="text-xs font-normal text-body">· optional</span>
+                </p>
+
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {addons.map(addon => {
+                    const on = chosen.includes(addon.id)
+                    return (
+                      <button
+                        key={addon.id}
+                        type="button"
+                        onClick={() => toggleAddon(addon)}
+                        disabled={!addon.available}
+                        aria-pressed={on}
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border
+                                    text-left transition-colors focus:outline-none
+                                    focus-visible:ring-2 focus-visible:ring-ink
+                                    ${!addon.available
+                                      ? 'border-rule bg-substrate/50 cursor-not-allowed'
+                                      : on
+                                        ? 'border-farhat bg-farhat/5'
+                                        : 'border-rule hover:border-ink'}`}
+                      >
+                        <span className={`w-5 h-5 shrink-0 rounded border flex items-center
+                                          justify-center
+                                          ${on ? 'bg-farhat border-farhat text-white'
+                                               : 'border-rule bg-white'}`}>
+                          {on && (
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 strokeWidth="3" strokeLinecap="round" className="w-3.5 h-3.5"
+                                 aria-hidden="true">
+                              <path d="M5 12l5 5L20 7" />
+                            </svg>
+                          )}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className={`block text-sm font-semibold
+                                            ${addon.available ? '' : 'text-body/60'}`}>
+                            {addon.name}
+                          </span>
+                          <span className="block text-xs text-body">
+                            {!addon.available
+                              ? 'Not available yet'
+                              : addon.price ? `GHS ${addon.price} ${perWord(addon.unit)}` : ''}
+                          </span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* ── Then the artwork ─────────────────────────────── */}
 
-            {needsFile && !sizeMissing && (
+            {needsFile && !sizeMissing && !comingSoon && (
               <ArtworkUpload
                 service={service}
                 specifications={values}
@@ -359,13 +450,13 @@ export default function Specify() {
               />
             )}
 
-            {needsFile && sizeMissing && (
+            {needsFile && sizeMissing && !comingSoon && (
               <div className="mt-5 pt-5 border-t border-rule">
                 <p className="text-[0.95rem] font-semibold text-body/60">
                   Your artwork
                 </p>
                 <p className="mt-1 text-xs text-body/60">
-                  Set the size above and we’ll check your file against it.
+                  Fill in the details above and we’ll check your file against them.
                 </p>
               </div>
             )}
@@ -386,12 +477,28 @@ export default function Specify() {
 
             <div className="mt-5 rounded-xl border border-rule bg-substrate/40
                             px-4 py-3">
+              {quote?.addons?.length > 0 && (
+                <div className="mb-2 pb-2 border-b border-rule space-y-1 text-xs text-body">
+                  <div className="flex justify-between gap-3">
+                    <span>{service.name}</span>
+                    <span className="tabular-nums">GHS {quote.base_total}</span>
+                  </div>
+                  {quote.addons.map(a => (
+                    <div key={a.service} className="flex justify-between gap-3">
+                      <span>+ {a.service_name} × {a.quantity}</span>
+                      <span className="tabular-nums">GHS {a.total}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="sm:flex sm:items-center sm:justify-between sm:gap-4">
                 <div className="min-w-0">
                   <p className="text-[0.7rem] text-body">
-                    {quote
-                      ? `${describe(quote)} · ${quote.quantity} piece${quote.quantity === 1 ? '' : 's'}`
-                      : 'Set a size to see the price'}
+                    {comingSoon
+                      ? 'Not available to order yet'
+                      : quote
+                        ? `${describe(quote)} · ${quote.quantity} ${unitWord(quantityField, quote.quantity)}`
+                        : 'Fill in the details to see the price'}
                   </p>
                   <p className="text-xl font-extrabold tabular-nums transition-opacity"
                      style={{ opacity: pricing ? 0.45 : 1 }}>
@@ -449,6 +556,21 @@ function describe(quote) {
     return `${area.toFixed(1)} sq ft`
   }
   return `GHS ${quote.unit_price} each`
+}
+
+// "boxes", "copies", "pieces": the word the service sells in.
+function unitWord(quantityField, n) {
+  const unit = quantityField?.unit
+  if (unit) return n === 1 ? unit.replace(/(es|s)$/, '') : unit
+  const label = (quantityField?.label || '').toLowerCase()
+  if (label.includes('cop')) return n === 1 ? 'copy' : 'copies'
+  return n === 1 ? 'piece' : 'pieces'
+}
+
+// How an add-on is counted, beside its price.
+function perWord(unit) {
+  if (unit === 'sheet' || unit === 'PER_PAGE' || unit === 'PER_SHEET') return 'per sheet'
+  return 'per copy'
 }
 
 function Shell({ children }) {
