@@ -56,6 +56,9 @@ export default function Specify() {
   const [values, setValues] = useState({})
   const [quantity, setQuantity] = useState(1)
   const [chosen, setChosen] = useState([])
+  // For packing add-ons: one envelope for all copies, or one per copy.
+  // Unset means Octos's suggestion; the customer can change it.
+  const [perCopy, setPerCopy] = useState({})
   const [quote, setQuote] = useState(null)
   const [pricing, setPricing] = useState(false)
   const [artwork, setArtwork] = useState(null)
@@ -83,7 +86,9 @@ export default function Specify() {
     [service],
   )
 
-  const addons = service?.addons || []
+  // Held steady between renders: a fresh empty list each time would make
+  // the price below look changed on every render and re-ask forever.
+  const addons = useMemo(() => service?.addons || [], [service])
   const byArea = service?.unit === 'PER_SQFT' || service?.unit === 'PER_SQCM'
   const comingSoon = service && service.available === false
 
@@ -103,6 +108,7 @@ export default function Specify() {
     )
     setQuantity(product.spec_template?.find(f => f.key === 'quantity')?.min ?? 1)
     setChosen([])
+    setPerCopy({})
     setQuote(null)
     setArtwork(null)
     setProblem('')
@@ -133,6 +139,18 @@ export default function Specify() {
   const sheets = pageCount ? Math.ceil(pageCount / (service?.pages_per_sheet || 1)) : null
   const waitingForFile = fromFile && !sheets
 
+  // What Octos suggests for packing: copies of a single sheet travel
+  // together; a copy of several sheets is a set that goes somewhere.
+  const suggestPerCopy = (sheets || Number(values.pages) || 1) > 1
+  const packingFor = id => perCopy[id] ?? suggestPerCopy
+  const addonsPayload = useMemo(
+    () => chosen.map(id => {
+      const addon = addons.find(a => a.id === id)
+      return addon?.packing ? { service: id, per_copy: perCopy[id] ?? suggestPerCopy } : id
+    }),
+    [chosen, addons, perCopy, suggestPerCopy],
+  )
+
   // Priced after a pause rather than on every keystroke, and priced by
   // the server: the browser does no arithmetic, because two
   // implementations of one sum always drift apart. Finishing is part
@@ -150,7 +168,7 @@ export default function Specify() {
       quoteLine(
         service.id, Number(quantity) || 1,
         fromFile ? { ...values, pages: sheets } : values,
-        chosen,
+        addonsPayload,
       )
         .then(r => setQuote(r.data))
         .catch(err => {
@@ -164,7 +182,7 @@ export default function Specify() {
     }, 400)
 
     return () => clearTimeout(timer)
-  }, [service, values, quantity, chosen, sizeMissing, comingSoon, waitingForFile, sheets, fromFile])
+  }, [service, values, quantity, addonsPayload, sizeMissing, comingSoon, waitingForFile, sheets, fromFile])
 
   // The artwork was judged against a size. Changing the size retires
   // the verdict — a file fine on a small print is refused across six
@@ -187,7 +205,7 @@ export default function Specify() {
         serviceId: service.id,
         quantity: Number(quantity) || 1,
         specifications: values,
-        addons: chosen,
+        addons: addonsPayload,
         artworkToken: artwork?.token,
       })
 
@@ -462,9 +480,10 @@ export default function Specify() {
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {addons.map(addon => {
                     const on = chosen.includes(addon.id)
+                    const askPacking = on && addon.packing && (Number(quantity) || 1) > 1
                     return (
+                      <div key={addon.id} className="flex flex-col gap-1.5">
                       <button
-                        key={addon.id}
                         type="button"
                         onClick={() => toggleAddon(addon)}
                         disabled={!addon.available}
@@ -502,6 +521,33 @@ export default function Specify() {
                           </span>
                         </span>
                       </button>
+                      {askPacking && (
+                        <div role="radiogroup" aria-label={`${addon.name}: how many`}
+                             className="flex gap-1 p-1 rounded-lg bg-substrate">
+                          {[
+                            { value: false, label: 'One for all copies' },
+                            { value: true, label: 'One per copy' },
+                          ].map(opt => {
+                            const picked = packingFor(addon.id) === opt.value
+                            return (
+                              <button
+                                key={opt.label}
+                                type="button"
+                                role="radio"
+                                aria-checked={picked}
+                                onClick={() => setPerCopy(p => ({ ...p, [addon.id]: opt.value }))}
+                                className={`flex-1 px-2 py-1.5 rounded-md text-xs font-semibold
+                                            transition-colors focus:outline-none
+                                            focus-visible:ring-2 focus-visible:ring-ink
+                                            ${picked ? 'bg-white text-ink shadow-sm' : 'text-body hover:text-ink'}`}
+                              >
+                                {opt.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                      </div>
                     )
                   })}
                 </div>
@@ -537,8 +583,8 @@ export default function Specify() {
             {quote?.minimum_applied && (
               <p className="mt-4 rounded-lg bg-substrate px-3.5 py-3 text-xs
                             leading-relaxed text-body">
-                This size is below our minimum, so each piece is charged at the
-                minimum rate.
+                Below our minimum size: each piece is charged GHS {quote.unit_price}.
+                Your size is printed exactly as you entered it.
               </p>
             )}
 
