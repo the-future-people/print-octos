@@ -456,7 +456,7 @@ function CartLine({ line, order, busy, onStep, onRemove }) {
     retry: false,
   })
 
-  const photo = serviceImage(line.service_name)
+  const photo = serviceImage(line.base_name || line.service_name)
   const spec = line.specifications || {}
   const size = spec.width_in && spec.height_in
     ? `${spec.width_in} × ${spec.height_in} in`
