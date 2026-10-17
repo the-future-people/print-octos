@@ -353,7 +353,7 @@ function Record({ orderNumber, token }) {
 }
 
 function LineRow({ line }) {
-  const photo = serviceImage(line.service_name)
+  const photo = serviceImage(line.base_name || line.service_name)
   const spec = line.specifications || {}
   const area = spec.width_in && spec.height_in
     ? (Number(spec.width_in) * Number(spec.height_in)) / 144
