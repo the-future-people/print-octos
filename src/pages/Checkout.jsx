@@ -45,6 +45,18 @@ export default function Checkout() {
   const [busy, setBusy] = useState(false)
   const [working, setWorking] = useState(null)
   const [problem, setProblem] = useState('')
+  // From the swipe until Paystack's page takes over. Both waits (our
+  // server, then Paystack loading) used to show nothing, which is when
+  // people press back or swipe again.
+  const [leaving, setLeaving] = useState(false)
+
+  // Coming back from Paystack with the back button, the browser can
+  // restore this page exactly as it was, overlay and all. Clear it.
+  useEffect(() => {
+    const restored = e => { if (e.persisted) { setLeaving(false); setBusy(false) } }
+    window.addEventListener('pageshow', restored)
+    return () => window.removeEventListener('pageshow', restored)
+  }, [])
 
   useEffect(() => {
     document.title = 'Checkout — Farhat Printing Press'
@@ -155,6 +167,7 @@ export default function Checkout() {
 
   async function handlePay() {
     setBusy(true)
+    setLeaving(true)
     setProblem('')
     try {
       const { data } = await startPayment(
@@ -169,6 +182,7 @@ export default function Checkout() {
         err.response?.data?.detail ||
         'We couldn’t start the payment. Try again in a moment.',
       )
+      setLeaving(false)
       setBusy(false)
     }
   }
@@ -388,6 +402,30 @@ export default function Checkout() {
           </div>
         </aside>
       </main>
+
+      {leaving && (
+        <div role="alertdialog" aria-live="assertive" aria-label="Taking you to Paystack"
+             className="fixed inset-0 z-[100] bg-white/95 backdrop-blur-sm flex flex-col
+                        items-center justify-center px-8 text-center">
+          <div className="w-12 h-12 rounded-full border-4 border-farhat/20 border-t-farhat
+                          animate-spin" aria-hidden="true" />
+          <p className="mt-5 flex items-center gap-2 text-lg font-bold">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                 strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"
+                 aria-hidden="true">
+              <rect x="5" y="11" width="14" height="10" rx="2" />
+              <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+            </svg>
+            Taking you to Paystack
+          </p>
+          <p className="mt-1.5 text-sm text-body">
+            GHS {order.total} · this can take a few seconds.
+          </p>
+          <p className="mt-4 text-sm font-semibold text-ink">
+            Please don’t close this page or press back.
+          </p>
+        </div>
+      )}
 
       <div className="lg:hidden fixed bottom-0 inset-x-0 bg-white border-t border-rule
                       px-5 py-3">
