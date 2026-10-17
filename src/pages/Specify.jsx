@@ -517,7 +517,9 @@ export default function Specify() {
                           <span className="block text-xs text-body">
                             {!addon.available
                               ? 'Not available yet'
-                              : addon.price ? `GHS ${addon.price} ${perWord(addon.unit)}` : ''}
+                              : Number(addon.price) === 0
+                                ? 'Free'
+                                : addon.price ? `GHS ${addon.price} ${perWord(addon.unit)}` : ''}
                           </span>
                         </span>
                       </button>
@@ -581,11 +583,29 @@ export default function Specify() {
             )}
 
             {quote?.minimum_applied && (
-              <p className="mt-4 rounded-lg bg-substrate px-3.5 py-3 text-xs
-                            leading-relaxed text-body">
-                Below our minimum size: each piece is charged GHS {quote.unit_price}.
-                Your size is printed exactly as you entered it.
-              </p>
+              <div className="mt-4 rounded-lg bg-substrate px-3.5 py-3 text-xs
+                              leading-relaxed text-body">
+                <p>
+                  Our smallest order is GHS {quote.minimum}, and your size is printed
+                  exactly as you entered it.
+                  {quote.covers_up_to > (Number(quantity) || 1) && (
+                    <> That GHS {quote.minimum} already covers up to{' '}
+                    <strong className="text-ink">{quote.covers_up_to} pieces</strong> this size.</>
+                  )}
+                </p>
+                {quote.covers_up_to > (Number(quantity) || 1) && (
+                  <button
+                    type="button"
+                    onClick={() => setQuantity(quote.covers_up_to)}
+                    className="mt-2 px-3 py-1.5 rounded-md border border-ink text-xs
+                               font-semibold text-ink hover:bg-ink hover:text-white
+                               transition-colors focus:outline-none focus-visible:ring-2
+                               focus-visible:ring-ink"
+                  >
+                    Make it {quote.covers_up_to}
+                  </button>
+                )}
+              </div>
             )}
 
             {/* ── What it comes to ─────────────────────────────── */}
@@ -688,6 +708,7 @@ function unitWord(quantityField, n) {
 
 // How an add-on is counted, beside its price.
 function perWord(unit) {
+  if (unit === 'PER_SQFT') return 'per sq ft'
   if (unit === 'sheet' || unit === 'PER_PAGE' || unit === 'PER_SHEET') return 'per sheet'
   return 'per copy'
 }
