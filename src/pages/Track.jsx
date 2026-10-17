@@ -317,8 +317,17 @@ function Record({ orderNumber, token }) {
                             {timeLabel(times[stage.key])}
                           </p>
                         )}
-                        {current && !times[stage.key] && (
+                        {current && !times[stage.key] && !estimateFor(order, stage.key) && (
                           <p className="mt-1 text-[0.7rem] text-body">Now</p>
+                        )}
+                        {current && estimateFor(order, stage.key) && (
+                          <p className={`mt-1 text-[0.7rem] font-semibold ${
+                            estimateFor(order, stage.key).held_up
+                              || estimateFor(order, stage.key).running_over
+                              ? 'text-amber-700' : 'text-emerald-700'
+                          }`}>
+                            {estimateText(estimateFor(order, stage.key))}
+                          </p>
                         )}
                       </div>
                     </li>
@@ -373,6 +382,13 @@ function LineRow({ line }) {
                 {area.toFixed(1)} sq ft
               </>
             )}
+          </p>
+        )}
+        {line.addons?.length > 0 && (
+          <p className="mt-0.5 text-xs text-body">
+            {line.addons
+              .map(a => `+ ${a.service_name}${a.detail ? ` (${a.detail})` : ''} × ${a.quantity}`)
+              .join(' · ')}
           </p>
         )}
         {line.artwork_filename && (
@@ -477,6 +493,45 @@ function FindOrder({ navigate }) {
       </div>
     </Shell>
   )
+}
+
+/**
+ * How long the stage they are in has left, if the floor knows. The server
+ * works it out on every look and the page looks every minute, so a job
+ * running long or a machine going down shows without a reload.
+ */
+function estimateFor(order, stageKey) {
+  const e = order.stage_estimate
+  return e && e.stage === stageKey ? e : null
+}
+
+function estimateText(e) {
+  if (e.held_up) return 'A short delay, we’re on it'
+  if (e.running_over) return 'Taking a little longer than usual'
+
+  // Work that runs past closing carries on next morning: say the day
+  // rather than a count of minutes that includes the night.
+  if (e.ready_at) {
+    const at = new Date(e.ready_at)
+    const now = new Date()
+    if (at.toDateString() !== now.toDateString()) {
+      const tomorrow = new Date(now)
+      tomorrow.setDate(now.getDate() + 1)
+      const day = at.toDateString() === tomorrow.toDateString()
+        ? 'tomorrow'
+        : at.toLocaleDateString('en-GB', { weekday: 'long' })
+      const time = at.toLocaleTimeString('en-GB', {
+        hour: 'numeric', minute: '2-digit', hour12: true,
+      })
+      return `Done ${day}, about ${time}`
+    }
+  }
+
+  const m = Number(e.minutes_left) || 0
+  if (m < 60) return `About ${m} min left`
+  const h = Math.floor(m / 60)
+  const rest = m % 60
+  return `About ${h} hr${rest ? ` ${rest} min` : ''} left`
 }
 
 function stageOf(order) {
