@@ -179,4 +179,7 @@ export const accountMe = () =>
 export const accountSignOut = () =>
   client.post('/api/v1/storefront/account/signout/')
 
+   export const accountOrders = () =>
+     client.get('/api/v1/storefront/account/orders/')
+
 export default client
