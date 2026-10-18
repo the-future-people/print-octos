@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useCart } from '../lib/CartContext.jsx'
 import { useAccount } from '../lib/AccountContext.jsx'
 import logo from '../assets/farhat-logo.png'
@@ -6,32 +6,78 @@ import logo from '../assets/farhat-logo.png'
 /**
  * The same header on every page.
  *
- * Three pages had grown three headers that differed in small ways
- * nobody chose — a cart on one, a text link on another, a different
- * logo size on the third. One component means a change lands
- * everywhere, and a customer moving between pages sees one shop.
+ * On the website: the red brand bar, with Track an order and the cart.
  *
- * Its width matches the content beneath it, so the mark sits on the
- * same line as the headline below and the cart on the same line as the
- * right edge of the grid. A header on a wider measure than its page
- * reads as a separate thing bolted on top.
+ * In the app it is an app's: Home keeps the red brand bar with the
+ * customer's account; every other screen gets a plain bar with its
+ * title and a back arrow, because the tabs at the bottom now carry the
+ * cart, the orders and the account.
  *
- * What varies is only what should: the back arrow appears where there
- * is somewhere to go back to, and the tracking page shows its order
- * number instead of the cart, because there the cart is not the
- * subject and the reference is what someone reads out on the phone.
- *
- * In the app, the account takes Track an order's place: a signed-in
- * customer's orders are all in their account, and looking one up by
- * number is the website's way, not the app's.
+ * In the app it also clears the phone's status bar and camera notch:
+ * the app is drawn edge to edge, and the bar makes room.
  */
-export default function Header({ back = false, orderNumber = null }) {
+
+// The app's names for its screens.
+function titleFor(pathname) {
+  if (pathname === '/categories') return 'Categories'
+  if (pathname === '/orders') return 'My orders'
+  if (pathname === '/checkout') return 'My cart'
+  if (pathname === '/more') return 'More'
+  if (pathname === '/account') return 'Account'
+  if (pathname === '/paid') return 'Payment'
+  if (pathname.startsWith('/track')) return 'Order details'
+  return ''
+}
+
+const TAB_ROOTS = ['/', '/categories', '/orders', '/more']
+
+export default function Header({ back = false, orderNumber = null, title = null }) {
+  const { inApp } = useAccount()
+  const { pathname } = useLocation()
+
+  if (inApp && pathname !== '/') {
+    return (
+      <AppBar
+        title={title ?? titleFor(pathname)}
+        back={!TAB_ROOTS.includes(pathname)}
+      />
+    )
+  }
+  return <BrandBar back={back} orderNumber={orderNumber} inApp={inApp} />
+}
+
+function AppBar({ title, back }) {
+  const navigate = useNavigate()
+  return (
+    <header
+      className="sticky top-0 z-20 bg-white border-b border-rule"
+      style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+    >
+      <div className="max-w-md mx-auto h-14 px-2 grid grid-cols-[48px_1fr_48px] items-center">
+        {back ? (
+          <button onClick={() => navigate(-1)} aria-label="Back"
+                  className="w-11 h-11 grid place-items-center text-ink">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                 strokeLinecap="round" strokeLinejoin="round" className="w-[22px] h-[22px]"
+                 aria-hidden="true">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
+        ) : <span />}
+        <h1 className="text-center text-[1.05rem] font-bold truncate">{title}</h1>
+        <span />
+      </div>
+    </header>
+  )
+}
+
+function BrandBar({ back, orderNumber, inApp }) {
   const navigate = useNavigate()
   const cart = useCart()
-  const { account, inApp } = useAccount()
+  const { account } = useAccount()
 
   return (
-    <header className="bg-farhat">
+    <header className="bg-farhat" style={inApp ? { paddingTop: 'env(safe-area-inset-top, 0px)' } : undefined}>
       <div className="bg-black/10">
         <div className="max-w-4xl mx-auto px-5 py-3 flex items-center gap-3">
 
@@ -72,60 +118,57 @@ export default function Header({ back = false, orderNumber = null }) {
           </button>
 
           <div className="ml-auto flex items-center gap-4 sm:gap-5 shrink-0 -mr-0.5">
-
-            {orderNumber ? (
+            {inApp ? (
+              <button
+                onClick={() => navigate('/account')}
+                aria-label={account ? `Your account, ${account.first_name}` : 'Sign in'}
+                className="text-white/90 hover:text-white transition-colors"
+              >
+                {account ? (
+                  // Their initial in a gold ring, with the logo's gold dot:
+                  // the customer's own place in Print Octos.
+                  <span className="relative w-8 h-8 rounded-full bg-white text-farhat
+                                   grid place-items-center text-[0.8rem] font-extrabold
+                                   ring-2 ring-gold">
+                    {(account.first_name || '?').charAt(0).toUpperCase()}
+                    <span className="absolute -top-[3px] -left-[3px] w-[9px] h-[9px]
+                                     rounded-full bg-gold border-[1.5px] border-farhat" />
+                  </span>
+                ) : (
+                  <span className="w-8 h-8 rounded-full border-[1.5px] border-white/70
+                                   grid place-items-center">
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-[17px] h-[17px]"
+                         aria-hidden="true">
+                      <circle cx="12" cy="8" r="4.2" />
+                      <path d="M3.8 20.5a8.2 8.2 0 0 1 16.4 0z" />
+                    </svg>
+                  </span>
+                )}
+              </button>
+            ) : orderNumber ? (
               <span className="text-[0.7rem] sm:text-xs text-white/80
                                tracking-wide tabular-nums">
                 {orderNumber}
               </span>
             ) : (
               <>
-                {inApp ? (
-                  <button
-                    onClick={() => navigate('/account')}
-                    aria-label={account ? `Your account, ${account.first_name}` : 'Sign in'}
-                    className="text-white/90 hover:text-white transition-colors"
-                  >
-                    {account ? (
-                      // Their initial in a gold ring, with the logo's gold dot:
-                      // the customer's own place in Print Octos.
-                      <span className="relative w-8 h-8 rounded-full bg-white text-farhat
-                                       grid place-items-center text-[0.8rem] font-extrabold
-                                       ring-2 ring-gold">
-                        {(account.first_name || '?').charAt(0).toUpperCase()}
-                        <span className="absolute -top-[3px] -left-[3px] w-[9px] h-[9px]
-                                         rounded-full bg-gold border-[1.5px] border-farhat" />
-                      </span>
-                    ) : (
-                      <span className="w-8 h-8 rounded-full border-[1.5px] border-white/70
-                                       grid place-items-center">
-                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-[17px] h-[17px]"
-                             aria-hidden="true">
-                          <circle cx="12" cy="8" r="4.2" />
-                          <path d="M3.8 20.5a8.2 8.2 0 0 1 16.4 0z" />
-                        </svg>
-                      </span>
-                    )}
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => navigate('/track')}
-                    aria-label="Track an order"
-                    className="text-white/90 hover:text-white transition-colors"
-                  >
-                    {/* Words on a wide screen, a parcel on a phone: both
-                        are destinations rather than actions, so an icon
-                        reads as well and leaves the cart room. */}
-                    <span className="hidden sm:inline text-xs">Track an order</span>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                         strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
-                         className="w-[19px] h-[19px] sm:hidden" aria-hidden="true">
-                      <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
-                      <path d="M4 7.5l8 4.5 8-4.5" />
-                      <path d="M12 12v9" />
-                    </svg>
-                  </button>
-                )}
+                <button
+                  onClick={() => navigate('/track')}
+                  aria-label="Track an order"
+                  className="text-white/90 hover:text-white transition-colors"
+                >
+                  {/* Words on a wide screen, a parcel on a phone: both
+                      are destinations rather than actions, so an icon
+                      reads as well and leaves the cart room. */}
+                  <span className="hidden sm:inline text-xs">Track an order</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                       strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
+                       className="w-[19px] h-[19px] sm:hidden" aria-hidden="true">
+                    <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
+                    <path d="M4 7.5l8 4.5 8-4.5" />
+                    <path d="M12 12v9" />
+                  </svg>
+                </button>
 
                 <button
                   onClick={() => navigate('/checkout')}

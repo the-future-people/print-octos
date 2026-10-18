@@ -608,7 +608,7 @@ function Empty({ navigate }) {
           Pick something to print and it’ll show up here.
         </p>
         <button
-          onClick={() => navigate('/')}
+          onClick={() => navigate(window.Capacitor?.isNativePlatform?.() || sessionStorage.getItem('pretend-app') ? '/categories' : '/')}
           className="mt-5 px-5 py-2.5 rounded-lg bg-farhat text-white text-sm
                      font-semibold hover:opacity-90 transition-opacity"
         >
@@ -620,13 +620,18 @@ function Empty({ navigate }) {
 }
 
 function Shell({ children }) {
+  // In the app, the shared header: "My cart" with a back arrow. On the
+  // website, checkout keeps its plain brand bar.
+  const { inApp } = useAccount()
   return (
     <div className="min-h-screen bg-white text-ink">
-      <header className="bg-farhat px-5 py-4">
-        <p className="max-w-5xl mx-auto text-base font-bold text-white">
-          Farhat<span className="font-normal text-white/85"> Printing Press</span>
-        </p>
-      </header>
+      {inApp ? <Header /> : (
+        <header className="bg-farhat px-5 py-4">
+          <p className="max-w-5xl mx-auto text-base font-bold text-white">
+            Farhat<span className="font-normal text-white/85"> Printing Press</span>
+          </p>
+        </header>
+      )}
       <main className="max-w-4xl mx-auto px-5">{children}</main>
     </div>
   )

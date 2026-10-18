@@ -187,7 +187,7 @@ function timeLeft(e) {
  * being made now, and what they have collected. Tapping one opens its
  * tracking page.
  */
-function MyOrders() {
+export function MyOrders({ heading = true }) {
   const navigate = useNavigate()
   const [tab, setTab] = useState('active')
   const { data, isLoading, isError } = useQuery({
@@ -204,7 +204,7 @@ function MyOrders() {
 
   return (
     <section className="mt-6">
-      <h2 className="text-[0.95rem] font-semibold">My orders</h2>
+      {heading && <h2 className="text-[0.95rem] font-semibold">My orders</h2>}
 
       <div className="mt-3 flex p-1 rounded-lg bg-substrate gap-1" role="tablist">
         {[['active', `Active · ${active.length}`], ['collected', `Collected · ${collected.length}`]].map(([key, label]) => (

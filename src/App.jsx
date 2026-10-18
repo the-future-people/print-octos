@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Routes, Route, useNavigate } from 'react-router-dom'
-import { takePaying } from './lib/paying'
 import Landing from './pages/Landing.jsx'
 import Specify from './pages/Specify.jsx'
 import Checkout from './pages/Checkout.jsx'
 import Track from './pages/Track.jsx'
 import Paid from './pages/Paid.jsx'
 import ShortLink from './pages/ShortLink.jsx'
-import LaunchSplash from './components/LaunchSplash.jsx'
 import Account from './pages/Account.jsx'
+import Categories from './pages/Categories.jsx'
+import Orders from './pages/Orders.jsx'
+import More from './pages/More.jsx'
+import LaunchSplash from './components/LaunchSplash.jsx'
+import TabBar from './components/TabBar.jsx'
 import { AccountProvider } from './lib/AccountContext.jsx'
+import { takePaying } from './lib/paying'
 
 export default function App() {
   // The opening animation, on top of the app while it loads. Only in the
@@ -46,8 +50,11 @@ export default function App() {
   return (
     <AccountProvider>
       <Routes>
-        <Route path="/account" element={<Account />} />
         <Route path="/" element={<Landing />} />
+        <Route path="/categories" element={<Categories />} />
+        <Route path="/orders" element={<Orders />} />
+        <Route path="/more" element={<More />} />
+        <Route path="/account" element={<Account />} />
         <Route path="/service/:serviceId" element={<Specify />} />
         <Route path="/checkout" element={<Checkout />} />
         <Route path="/track" element={<Track />} />
@@ -59,6 +66,7 @@ export default function App() {
         {/* The link in the text message, traded for the real token. */}
         <Route path="/t/:code" element={<ShortLink />} />
       </Routes>
+      <TabBar />
       {opening && <LaunchSplash onDone={opened} />}
     </AccountProvider>
   )
