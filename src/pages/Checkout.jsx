@@ -11,6 +11,7 @@ import SwipeToPay from '../components/SwipeToPay.jsx'
 import BranchChoice from '../components/BranchChoice.jsx'
 import logo from '../assets/farhat-logo.png'
 import Header from '../components/Header.jsx'
+import { useAccount } from '../lib/AccountContext.jsx'
 /**
  * Finishing an order.
  *
@@ -57,6 +58,20 @@ export default function Checkout() {
     window.addEventListener('pageshow', restored)
     return () => window.removeEventListener('pageshow', restored)
   }, [])
+
+  // In the app, the account is who is ordering: its number and name go
+  // to the order without being typed again.
+  const { account, ready: accountReady, inApp } = useAccount()
+  useEffect(() => {
+    if (!inApp || !account?.number || who || !saved) return undefined
+    let live = true
+    identify(saved.order_number, saved.access_token, {
+      phone: account.number, first_name: account.first_name,
+    })
+      .then(({ data }) => { if (live) { setWho(data); refetch() } })
+      .catch(err => { if (live && err.response?.data?.code_required) setWho(err.response.data) })
+    return () => { live = false }
+  }, [inApp, account, who, saved, refetch])
 
   useEffect(() => {
     document.title = 'Checkout — Farhat Printing Press'
@@ -203,6 +218,23 @@ export default function Checkout() {
 
   // ── Nothing to finish ──────────────────────────────────────────
 
+  if (inApp && accountReady && !account && saved) {
+    return (
+      <Shell>
+        <div className="py-16 text-center max-w-sm mx-auto">
+          <p className="text-lg font-bold">Sign in to place your order</p>
+          <p className="mt-1.5 text-sm leading-relaxed text-body">
+            Your number is your account: we’ll text you a code, once on this
+            phone. Your order is kept while you do.
+          </p>
+          <button onClick={() => navigate('/account?next=/checkout')}
+                  className="mt-5 px-5 py-2.5 rounded-lg bg-farhat text-white text-sm font-semibold">
+            Sign in
+          </button>
+        </div>
+      </Shell>
+    )
+  }
   if (!saved) return <Empty navigate={navigate} />
   if (isLoading) {
     return <Shell><p className="py-12 text-sm text-body">Loading your order…</p></Shell>

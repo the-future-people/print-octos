@@ -158,4 +158,25 @@ export const openShortLink = code =>
 export const confirmPayment = reference =>
   client.get(`/api/v1/storefront/confirm/${reference}/`)
 
+/**
+ * The app's session, sent with every request once signed in. The website
+ * has no accounts, so there it is never set.
+ */
+export const setAppToken = token => {
+  if (token) client.defaults.headers.common.Authorization = `App ${token}`
+  else delete client.defaults.headers.common.Authorization
+}
+
+export const accountCode = phone =>
+  client.post('/api/v1/storefront/account/code/', { phone })
+
+export const accountVerify = details =>
+  client.post('/api/v1/storefront/account/verify/', details)
+
+export const accountMe = () =>
+  client.get('/api/v1/storefront/account/me/')
+
+export const accountSignOut = () =>
+  client.post('/api/v1/storefront/account/signout/')
+
 export default client

@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useCart } from '../lib/CartContext.jsx'
+import { useAccount } from '../lib/AccountContext.jsx'
 import logo from '../assets/farhat-logo.png'
 
 /**
@@ -19,10 +20,15 @@ import logo from '../assets/farhat-logo.png'
  * is somewhere to go back to, and the tracking page shows its order
  * number instead of the cart, because there the cart is not the
  * subject and the reference is what someone reads out on the phone.
+ *
+ * In the app, the account takes Track an order's place: a signed-in
+ * customer's orders are all in their account, and looking one up by
+ * number is the website's way, not the app's.
  */
 export default function Header({ back = false, orderNumber = null }) {
   const navigate = useNavigate()
   const cart = useCart()
+  const { account, inApp } = useAccount()
 
   return (
     <header className="bg-farhat">
@@ -74,23 +80,52 @@ export default function Header({ back = false, orderNumber = null }) {
               </span>
             ) : (
               <>
-                <button
-                  onClick={() => navigate('/track')}
-                  aria-label="Track an order"
-                  className="text-white/90 hover:text-white transition-colors"
-                >
-                  {/* Words on a wide screen, a parcel on a phone: both
-                      are destinations rather than actions, so an icon
-                      reads as well and leaves the cart room. */}
-                  <span className="hidden sm:inline text-xs">Track an order</span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                       strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
-                       className="w-[19px] h-[19px] sm:hidden" aria-hidden="true">
-                    <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
-                    <path d="M4 7.5l8 4.5 8-4.5" />
-                    <path d="M12 12v9" />
-                  </svg>
-                </button>
+                {inApp ? (
+                  <button
+                    onClick={() => navigate('/account')}
+                    aria-label={account ? `Your account, ${account.first_name}` : 'Sign in'}
+                    className="text-white/90 hover:text-white transition-colors"
+                  >
+                    {account ? (
+                      // Their initial in a gold ring, with the logo's gold dot:
+                      // the customer's own place in Print Octos.
+                      <span className="relative w-8 h-8 rounded-full bg-white text-farhat
+                                       grid place-items-center text-[0.8rem] font-extrabold
+                                       ring-2 ring-gold">
+                        {(account.first_name || '?').charAt(0).toUpperCase()}
+                        <span className="absolute -top-[3px] -left-[3px] w-[9px] h-[9px]
+                                         rounded-full bg-gold border-[1.5px] border-farhat" />
+                      </span>
+                    ) : (
+                      <span className="w-8 h-8 rounded-full border-[1.5px] border-white/70
+                                       grid place-items-center">
+                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-[17px] h-[17px]"
+                             aria-hidden="true">
+                          <circle cx="12" cy="8" r="4.2" />
+                          <path d="M3.8 20.5a8.2 8.2 0 0 1 16.4 0z" />
+                        </svg>
+                      </span>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => navigate('/track')}
+                    aria-label="Track an order"
+                    className="text-white/90 hover:text-white transition-colors"
+                  >
+                    {/* Words on a wide screen, a parcel on a phone: both
+                        are destinations rather than actions, so an icon
+                        reads as well and leaves the cart room. */}
+                    <span className="hidden sm:inline text-xs">Track an order</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
+                         className="w-[19px] h-[19px] sm:hidden" aria-hidden="true">
+                      <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
+                      <path d="M4 7.5l8 4.5 8-4.5" />
+                      <path d="M12 12v9" />
+                    </svg>
+                  </button>
+                )}
 
                 <button
                   onClick={() => navigate('/checkout')}

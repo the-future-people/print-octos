@@ -8,6 +8,8 @@ import Track from './pages/Track.jsx'
 import Paid from './pages/Paid.jsx'
 import ShortLink from './pages/ShortLink.jsx'
 import LaunchSplash from './components/LaunchSplash.jsx'
+import Account from './pages/Account.jsx'
+import { AccountProvider } from './lib/AccountContext.jsx'
 
 export default function App() {
   // The opening animation, on top of the app while it loads. Only in the
@@ -42,8 +44,9 @@ export default function App() {
   }, [navigate])
 
   return (
-    <>
+    <AccountProvider>
       <Routes>
+        <Route path="/account" element={<Account />} />
         <Route path="/" element={<Landing />} />
         <Route path="/service/:serviceId" element={<Specify />} />
         <Route path="/checkout" element={<Checkout />} />
@@ -57,6 +60,6 @@ export default function App() {
         <Route path="/t/:code" element={<ShortLink />} />
       </Routes>
       {opening && <LaunchSplash onDone={opened} />}
-    </>
+    </AccountProvider>
   )
 }
