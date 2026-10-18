@@ -1,0 +1,14 @@
+{
+  "appId": "com.printoctos.app",
+  "appName": "Print Octos",
+  "webDir": "dist",
+  "server": { "androidScheme": "https" },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "launchShowDuration": 3000,
+      "backgroundColor": "#E31E24",
+      "showSpinner": false
+    }
+  }
+}

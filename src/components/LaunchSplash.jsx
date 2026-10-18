@@ -13,6 +13,7 @@
 // - "Reduce motion" in the phone's settings gets a plain fade instead.
 
 import { useEffect, useRef, useState } from 'react'
+import { SplashScreen } from '@capacitor/splash-screen'
 
 const RED = '#E31E24'
 const GOLD = '#F5A623'
@@ -34,6 +35,9 @@ export default function LaunchSplash({ onDone }) {
   const raf = useRef(0)
 
   useEffect(() => {
+    // The phone's still launch image is this animation's first frame:
+    // swap it for the live one at once, so the two read as one.
+    SplashScreen.hide({ fadeOutDuration: 0 }).catch(() => {})
     if (skip) { onDone?.(); return undefined }
     shownThisLaunch = true
 
