@@ -170,10 +170,24 @@ export default function Checkout() {
     setLeaving(true)
     setProblem('')
     try {
+      // In the app, Paystack opens in a panel over Print Octos and returns
+      // to a page on the website that hands straight back to the app.
+      const inApp = !!window.Capacitor?.isNativePlatform?.()
       const { data } = await startPayment(
         saved.order_number, saved.access_token,
-        `${window.location.origin}/paid`,
+        inApp
+          ? 'https://print-octos.vercel.app/paid?from=app'
+          : `${window.location.origin}/paid`,
       )
+      if (inApp) {
+        const { Browser } = await import('@capacitor/browser')
+        const { setPaying } = await import('../lib/paying')
+        setPaying(data.reference || saved.order_number)
+        await Browser.open({ url: data.authorization_url })
+        setLeaving(false)
+        setBusy(false)
+        return
+      }
       // Paystack's own page. Cards, mobile money and bank all live
       // there; nothing about the payment happens on ours.
       window.location.href = data.authorization_url

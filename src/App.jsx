@@ -1,5 +1,6 @@
-import { useCallback, useState } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { useCallback, useEffect, useState } from 'react'
+import { Routes, Route, useNavigate } from 'react-router-dom'
+import { takePaying } from './lib/paying'
 import Landing from './pages/Landing.jsx'
 import Specify from './pages/Specify.jsx'
 import Checkout from './pages/Checkout.jsx'
@@ -13,6 +14,32 @@ export default function App() {
   // phone app, only on a cold start; on the website it is gone at once.
   const [opening, setOpening] = useState(true)
   const opened = useCallback(() => setOpening(false), [])
+  const navigate = useNavigate()
+
+  // Back from Paystack. Either the website's return page hands over
+  // through printoctos://paid, or the customer closes the panel
+  // themselves; both land on the confirmation, which asks the server
+  // what really happened.
+  useEffect(() => {
+    if (!window.Capacitor?.isNativePlatform?.()) return undefined
+    const subs = []
+    ;(async () => {
+      const { App: Native } = await import('@capacitor/app')
+      const { Browser } = await import('@capacitor/browser')
+      subs.push(await Native.addListener('appUrlOpen', ({ url }) => {
+        if (!url.startsWith('printoctos://paid')) return
+        takePaying()
+        const reference = new URL(url.replace('printoctos://', 'https://app/')).searchParams.get('reference') || ''
+        Browser.close().catch(() => {})
+        navigate(`/paid?reference=${encodeURIComponent(reference)}`)
+      }))
+      subs.push(await Browser.addListener('browserFinished', () => {
+        const reference = takePaying()
+        if (reference) navigate(`/paid?reference=${encodeURIComponent(reference)}&closed=1`)
+      }))
+    })()
+    return () => subs.forEach(s => s.remove())
+  }, [navigate])
 
   return (
     <>

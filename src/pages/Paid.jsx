@@ -39,6 +39,10 @@ export default function Paid() {
   // channel, and either is our order number.
   const reference = params.get('reference') || params.get('trxref')
   const saved = cart.saved
+  // Opened in Paystack's panel from the app: hand straight back to it.
+  const handBack = params.get('from') === 'app' && !window.Capacitor?.isNativePlatform?.()
+  // The customer closed the panel themselves: paid, or changed their mind.
+  const closed = params.get('closed') === '1'
 
   useEffect(() => {
     document.title = 'Payment — Farhat Printing Press'
@@ -70,6 +74,13 @@ export default function Paid() {
         // a second behind.
       }
 
+      // A closed panel is either a payment still landing or one never
+      // made. Saying "not paid" could make someone pay twice, so after a
+      // short look it says honestly that it cannot tell yet.
+      if (closed && Date.now() - started.current > 6_000) {
+        setState('unsure')
+        return
+      }
       if (Date.now() - started.current > GIVE_UP_AFTER) {
         setState('slow')
         return
@@ -93,11 +104,14 @@ export default function Paid() {
     if (state === 'paid') cart.forget()
   }, [state, cart])
 
+  if (handBack) return <BackToApp reference={reference} />
+
   return (
     <div className="min-h-screen bg-white text-ink">
       <Header />
       <main className="max-w-md mx-auto px-5">
         {state === 'checking' && <Checking />}
+        {state === 'unsure' && <Unsure navigate={navigate} />}
         {state === 'paid' && (
           <Done order={order} saved={saved} navigate={navigate} />
         )}
@@ -360,4 +374,43 @@ function readyLabel(when) {
   const today = new Date().toDateString() === at.toDateString()
   return today ? `${time} today`
     : `${at.toLocaleDateString('en-GB', { weekday: 'short' })} ${time}`
+}
+
+
+function BackToApp({ reference }) {
+  const link = `printoctos://paid?reference=${encodeURIComponent(reference || '')}`
+  useEffect(() => { window.location.href = link }, [link])
+  return (
+    <div className="min-h-screen grid place-items-center px-8 text-center">
+      <div>
+        <p className="text-[0.95rem] font-semibold">Taking you back to Print Octos…</p>
+        <a href={link} className="mt-4 inline-block px-5 py-2.5 rounded-lg bg-farhat
+                                  text-white text-sm font-semibold">
+          Return to the app
+        </a>
+      </div>
+    </div>
+  )
+}
+
+function Unsure({ navigate }) {
+  return (
+    <div className="py-16 text-center">
+      <h1 className="text-lg font-bold">We couldn’t confirm a payment yet</h1>
+      <p className="mt-1.5 text-sm leading-relaxed text-body">
+        If you completed it, it will show in a moment and we’ll text you.
+        If you didn’t, nothing was taken and your order is still here.
+      </p>
+      <div className="mt-5 flex gap-2 justify-center">
+        <button onClick={() => window.location.reload()}
+                className="px-4 py-2.5 rounded-lg border border-ink text-sm font-semibold">
+          Check again
+        </button>
+        <button onClick={() => navigate('/checkout')}
+                className="px-4 py-2.5 rounded-lg bg-farhat text-white text-sm font-semibold">
+          Back to my order
+        </button>
+      </div>
+    </div>
+  )
 }
