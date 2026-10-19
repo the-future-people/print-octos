@@ -21,12 +21,14 @@ function kindOf(name = '') {
   return { kind: 'sheet', size: size ? `A${size}` : null, dot: mono ? 'mono' : colour ? 'colour' : null }
 }
 
-export default function ProductBadge({ name }) {
+export default function ProductBadge({ name, onLight = false }) {
   const k = kindOf(name)
+  // On a pale tile the white shapes need an edge to be seen.
+  const edge = onLight ? ' ring-1 ring-black/10' : ''
 
   if (k.kind === 'banner') {
     return (
-      <span aria-hidden="true" className="relative shrink-0 w-[30px] h-[14px] rounded-[3px] bg-white overflow-hidden">
+      <span aria-hidden="true" className={`relative shrink-0 w-[30px] h-[14px] rounded-[3px] bg-white overflow-hidden${edge}`}>
         <span className="absolute inset-x-0 top-[4px] h-[6px] bg-farhat/80" />
       </span>
     )
@@ -34,7 +36,7 @@ export default function ProductBadge({ name }) {
 
   if (k.kind === 'card') {
     return (
-      <span aria-hidden="true" className="relative shrink-0 w-[22px] h-[14px] rounded-[3px] bg-white">
+      <span aria-hidden="true" className={`relative shrink-0 w-[22px] h-[14px] rounded-[3px] bg-white${edge}`}>
         <span className="absolute left-[3px] top-[3px] w-[8px] h-[2px] rounded bg-farhat" />
         <span className="absolute left-[3px] top-[7px] w-[12px] h-[1.5px] rounded bg-ink/30" />
         <span className="absolute left-[3px] top-[10px] w-[9px] h-[1.5px] rounded bg-ink/30" />
@@ -44,7 +46,7 @@ export default function ProductBadge({ name }) {
 
   if (k.kind === 'sticker') {
     return (
-      <span aria-hidden="true" className="relative shrink-0 w-[20px] h-[20px] rounded-full bg-white grid place-items-center">
+      <span aria-hidden="true" className={`relative shrink-0 w-[20px] h-[20px] rounded-full bg-white grid place-items-center${edge}`}>
         <span className="w-[10px] h-[10px] rounded-full border-2 border-farhat" />
       </span>
     )
@@ -54,7 +56,7 @@ export default function ProductBadge({ name }) {
   return (
     <span aria-hidden="true"
           className={`relative shrink-0 h-[24px] ${k.size === 'A3' ? 'w-[22px]' : 'w-[19px]'}
-                      rounded-[3px] bg-white grid place-items-center`}>
+                      rounded-[3px] bg-white grid place-items-center${edge}`}>
       {k.size && <span className="text-[8px] font-black leading-none text-ink">{k.size}</span>}
       {/* The folded corner. */}
       <span className="absolute top-0 right-0 w-[6px] h-[6px] rounded-bl-[2px]"

@@ -4,9 +4,11 @@ import { useQuery } from '@tanstack/react-query'
 import { getCatalogue, quoteLine, commitLine } from '../api/client'
 import { useCart } from '../lib/CartContext.jsx'
 import { useToast } from '../lib/ToastContext.jsx'
+import { useAccount } from '../lib/AccountContext.jsx'
 import { serviceImage } from '../lib/images'
 import ArtworkUpload from '../components/ArtworkUpload.jsx'
 import Header from '../components/Header.jsx'
+import ProductBadge from '../components/ProductBadge.jsx'
 /**
  * Configuring one item.
  *
@@ -29,12 +31,17 @@ import Header from '../components/Header.jsx'
  * Finishing (lamination, binding, an envelope) is chosen here too, and
  * priced by the server with everything else. Something not available
  * yet is shown, so the customer knows it exists, but cannot be ticked.
+ *
+ * In the app the same page is laid out as an app screen: the product
+ * card, numbered steps (your order, your file, finishing) and the total
+ * held at the bottom. The logic is one and the same for both.
  */
 export default function Specify() {
   const { serviceId } = useParams()
   const navigate = useNavigate()
   const cart = useCart()
   const toast = useToast()
+  const { inApp } = useAccount()
 
   const { data: services = [], isLoading: loadingCatalogue } = useQuery({
     queryKey: ['catalogue'],
@@ -291,6 +298,22 @@ export default function Specify() {
     : needsFile && !artwork ? 'Upload artwork to continue'
     : needsFile && artwork?.verdict === 'refuse' ? 'Send different artwork'
     : 'Checkout'
+
+  if (inApp) {
+    return (
+      <AppSpecify
+        {...{
+          product, service, variants, photo, fields, values, quantity, quantityField,
+          addons, chosen, byArea, comingSoon, needsFile, sizeMissing, artwork, setArtwork,
+          quote, pricing, problem, canContinue, committing, fromFile, pageCount, sheets,
+          waitingForFile, chooseVariant, setField, clampField, setValues, stepQuantity,
+          setQuantity, toggleAddon, packingFor, setPerCopy, handleContinue, cartCount: cart.count,
+          navigate,
+        }}
+        continueLabel={continueLabel === 'Checkout' ? 'Continue' : continueLabel}
+      />
+    )
+  }
 
   return (
     <div className="min-h-screen bg-white text-ink">
@@ -714,14 +737,391 @@ function perWord(unit) {
 }
 
 function Shell({ children }) {
+  const { inApp } = useAccount()
   return (
     <div className="min-h-screen bg-white text-ink">
-      <header className="bg-farhat px-5 py-4">
-        <p className="max-w-4xl mx-auto text-base font-bold text-white">
-          Farhat<span className="font-normal text-white/85"> Printing Press</span>
-        </p>
-      </header>
+      {inApp ? <Header /> : (
+        <header className="bg-farhat px-5 py-4">
+          <p className="max-w-4xl mx-auto text-base font-bold text-white">
+            Farhat<span className="font-normal text-white/85"> Printing Press</span>
+          </p>
+        </header>
+      )}
       <main className="max-w-4xl mx-auto px-5">{children}</main>
+    </div>
+  )
+}
+
+// ── The app's layout ─────────────────────────────────────────────
+
+const SECTION = { PRODUCTION: 'Order ahead', INSTANT: 'Documents & flyers' }
+
+// Small facts about the product, read from what it is.
+function specChips(product) {
+  const n = `${product.base_name || ''} ${product.name}`.toLowerCase()
+  if (/banner|flexy/.test(n)) return ['Outdoor flex', 'Any size from 1 inch']
+  if (/sticker|sav\b|vinyl/.test(n)) return ['Self-adhesive vinyl', 'Any size from 1 inch']
+  if (/business card|\bcards?\b/.test(n)) return ['Box of 100', 'One side or both, same price']
+  const chips = []
+  const size = (n.match(/\ba([3-5])\b/) || [])[1]
+  if (size) chips.push({ 3: 'A3 size (297 × 420 mm)', 4: 'A4 size (210 × 297 mm)', 5: 'A5 size (148 × 210 mm)' }[size])
+  if (/b&w|black/.test(n)) chips.push('Black & white')
+  else if (/colou?r|flyer|poster/.test(n)) chips.push('Full colour')
+  return chips
+}
+
+// A clear picture for each kind of finishing, until there are photos.
+function FinishingIcon({ name }) {
+  const n = (name || '').toLowerCase()
+  const path =
+    /bind/.test(n) ? <><rect x="6" y="3" width="13" height="18" rx="1.5" /><path d="M6 6H4M6 10H4M6 14H4M6 18H4" /></>
+    : /lamin/.test(n) ? <><rect x="5" y="3" width="14" height="18" rx="1.5" /><path d="M8 7l8 0M14 12l3-3" /></>
+    : /envelope/.test(n) ? <><rect x="3" y="6" width="18" height="12" rx="1.5" /><path d="M3 7l9 6 9-6" /></>
+    : /bag/.test(n) ? <><path d="M5 8h14l-1 12H6z" /><path d="M9 8V6a3 3 0 0 1 6 0v2" /></>
+    : /cut/.test(n) ? <><circle cx="6" cy="17" r="2.5" /><circle cx="6" cy="7" r="2.5" /><path d="M8 8.5L20 18M8 15.5L20 6" /></>
+    : /eyelet/.test(n) ? <><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2.5" /></>
+    : <path d="M12 3l2.5 5 5.5.8-4 3.9.9 5.5L12 15.6 7.1 18.2l.9-5.5-4-3.9 5.5-.8z" />
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"
+         strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6" aria-hidden="true">
+      {path}
+    </svg>
+  )
+}
+
+function StepTitle({ n, title, note }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className="w-7 h-7 rounded-full bg-farhat text-white grid place-items-center text-sm font-extrabold">{n}</span>
+      <h2 className="text-lg font-bold">{title}</h2>
+      {note && <span className="text-sm text-body">{note}</span>}
+    </div>
+  )
+}
+
+function AppSpecify(p) {
+  const {
+    product, service, variants, photo, fields, values, quantity, quantityField, addons, chosen,
+    byArea, comingSoon, needsFile, sizeMissing, artwork, setArtwork, quote, pricing, problem,
+    canContinue, continueLabel, fromFile, pageCount, sheets, waitingForFile, chooseVariant,
+    setField, clampField, setValues, stepQuantity, setQuantity, toggleAddon, packingFor,
+    setPerCopy, handleContinue, cartCount, navigate,
+  } = p
+  const [breakdown, setBreakdown] = useState(false)
+  const chips = specChips(product)
+  let step = 0
+
+  const cartButton = (
+    <button onClick={() => navigate('/checkout')} aria-label="Cart"
+            className="relative w-11 h-11 grid place-items-center text-white">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+           strokeLinecap="round" strokeLinejoin="round" className="w-[22px] h-[22px]" aria-hidden="true">
+        <circle cx="9" cy="20" r="1.4" /><circle cx="18" cy="20" r="1.4" />
+        <path d="M2 3h2.5l2.3 11.5a1.6 1.6 0 0 0 1.6 1.3h8.9a1.6 1.6 0 0 0 1.6-1.3L21 7H5.4" />
+      </svg>
+      {cartCount > 0 && (
+        <span className="absolute top-1 right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-gold text-ink
+                         text-[0.6rem] font-extrabold leading-4 text-center">{cartCount}</span>
+      )}
+    </button>
+  )
+
+  const unit = unitWord(quantityField, Number(quantity) || 1)
+
+  return (
+    <div className="min-h-screen bg-white text-ink">
+      <Header title={product.name} subtitle={SECTION[product.category] || null} action={cartButton} />
+
+      <main className="max-w-md mx-auto px-4 pb-44">
+        {/* The product. */}
+        <div className="flex gap-3.5 p-3 rounded-2xl bg-[#f7f6f3]">
+          {photo ? (
+            <img src={photo} alt="" className="w-[42%] aspect-[4/3] object-cover rounded-xl shrink-0" />
+          ) : (
+            <div className="w-[42%] aspect-[4/3] rounded-xl bg-[#fdecec] grid place-items-center shrink-0">
+              <span className="scale-[2.4]"><ProductBadge name={product.base_name || product.name} onLight /></span>
+            </div>
+          )}
+          <div className="min-w-0 flex flex-col">
+            <p className="text-[0.95rem] font-extrabold leading-tight">{product.name}</p>
+            <p className="mt-1 text-xs leading-snug text-body line-clamp-3">{product.description}</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {chips.map(c => (
+                <span key={c} className="px-2 py-0.5 rounded-lg bg-white text-[0.65rem] font-semibold text-ink/80">{c}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {comingSoon && (
+          <div className="mt-4 rounded-2xl border border-gold/50 bg-gold/10 px-4 py-3">
+            <p className="text-sm font-semibold">Coming soon</p>
+            <p className="mt-1 text-xs leading-relaxed text-body">
+              We’re getting ready to make this. Check back soon, or walk in and ask about it.
+            </p>
+          </div>
+        )}
+
+        <div className={comingSoon ? 'opacity-50 pointer-events-none' : ''}>
+          {/* ── Your order ── */}
+          <section className="mt-6">
+            <StepTitle n={++step} title={byArea ? 'Size & quantity' : 'Your order'} />
+
+            {variants.length > 1 && (
+              <>
+                <p className="mt-3 text-sm text-body">Print sides</p>
+                <div role="radiogroup" aria-label="Sides" className="mt-2 grid grid-cols-2 gap-2.5">
+                  {variants.map((v, i) => {
+                    const on = v.id === service.id
+                    return (
+                      <button key={v.id} type="button" role="radio" aria-checked={on}
+                              disabled={v.available === false} onClick={() => chooseVariant(v.id)}
+                              className={`flex items-center justify-center gap-2.5 py-3.5 rounded-2xl border-2
+                                          text-sm font-semibold transition-colors disabled:opacity-40
+                                          ${on ? 'border-farhat bg-farhat/5 text-farhat' : 'border-[#ece9e3] text-ink'}`}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"
+                             strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6" aria-hidden="true">
+                          {i === 0
+                            ? <path d="M7 3h7l4 4v14H7z" />
+                            : <><path d="M9 3h7l4 4v12H9z" /><path d="M5 7v14h10" /></>}
+                        </svg>
+                        {v.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+
+            {fields.length > 0 && (
+              <div className="mt-3 grid grid-cols-2 gap-2.5">
+                {fields.map(field => (
+                  <label key={field.key} className="block">
+                    <span className="block mb-1.5 text-sm text-body">
+                      {field.label}{field.unit ? ` (${field.unit})` : ''}
+                    </span>
+                    {field.type === 'select' ? (
+                      <select value={values[field.key] ?? ''}
+                              onChange={e => setValues(v => ({ ...v, [field.key]: e.target.value }))}
+                              className="w-full px-3 py-3 rounded-xl border border-[#ece9e3] bg-white text-[1rem]
+                                         focus:outline-none focus:border-ink">
+                        {(field.options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                    ) : (
+                      <input type="number" inputMode="numeric" min={field.min ?? 1} max={field.max}
+                             placeholder={field.placeholder || ''} value={values[field.key] ?? ''}
+                             onChange={e => setField(field.key, e.target.value)}
+                             onBlur={e => clampField(field, e.target.value)}
+                             className="w-full px-3 py-3 rounded-xl border border-[#ece9e3] bg-white text-[1rem]
+                                        tabular-nums placeholder:text-body/40 focus:outline-none focus:border-ink" />
+                    )}
+                  </label>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <span className="text-sm text-body">
+                {quantityField?.label && quantityField.label !== 'Quantity' ? quantityField.label : 'How many?'}
+                {quantityField?.step > 1 && <span className="text-body/70"> · in {quantityField.step}s</span>}
+              </span>
+              <div className="flex items-center rounded-2xl border border-[#ece9e3] overflow-hidden">
+                <button onClick={() => stepQuantity(-1)} aria-label="Fewer"
+                        className="w-11 h-11 grid place-items-center text-xl">−</button>
+                <input type="number" inputMode="numeric" min={quantityField?.min || 1} step={quantityField?.step || 1}
+                       value={quantity}
+                       onChange={e => setQuantity(e.target.value === '' ? '' : Number(e.target.value))}
+                       onBlur={e => setQuantity(Math.max(quantityField?.min || 1, Number(e.target.value) || 1))}
+                       className="w-14 h-11 text-center text-[1rem] font-semibold tabular-nums border-x border-[#ece9e3]
+                                  focus:outline-none" />
+                <button onClick={() => stepQuantity(1)} aria-label="More"
+                        className="w-11 h-11 grid place-items-center text-xl text-farhat bg-farhat/5">+</button>
+              </div>
+            </div>
+
+            {byArea && (
+              <p className="mt-2.5 text-xs leading-relaxed text-body">
+                Printed to the exact size you enter. Please check your measurements.
+              </p>
+            )}
+          </section>
+
+          {/* ── Your file ── */}
+          {needsFile && (
+            <section className="mt-7">
+              <StepTitle n={++step} title="Your file" />
+              {sizeMissing ? (
+                <p className="mt-2 text-sm text-body">Enter the size above, and we’ll check your file against it.</p>
+              ) : (
+                <div className="-mt-3">
+                  <ArtworkUpload service={service} specifications={values} result={artwork} onResult={setArtwork} />
+                </div>
+              )}
+              {fromFile && pageCount && (
+                <p className="mt-2 text-xs text-body">
+                  {pageCount} page{pageCount === 1 ? '' : 's'} · {sheets} sheet{sheets === 1 ? '' : 's'} a copy
+                </p>
+              )}
+            </section>
+          )}
+
+          {/* ── Finishing ── */}
+          {addons.length > 0 && (
+            <section className="mt-7">
+              <StepTitle n={++step} title="Finishing" note="Optional" />
+              <p className="mt-1 ml-[38px] text-sm text-body">Add finishing to your order.</p>
+              <div className="mt-3 space-y-2.5">
+                {addons.map(addon => {
+                  const on = chosen.includes(addon.id)
+                  const askPacking = on && addon.packing && (Number(quantity) || 1) > 1
+                  const free = Number(addon.price) === 0
+                  return (
+                    <div key={addon.id}>
+                      <button type="button" onClick={() => toggleAddon(addon)} disabled={!addon.available}
+                              aria-pressed={on}
+                              className={`w-full flex items-center gap-3 p-3 rounded-2xl border text-left transition-colors
+                                          ${!addon.available ? 'border-[#ece9e3] bg-[#f7f6f3] cursor-not-allowed'
+                                            : on ? 'border-farhat bg-farhat/5' : 'border-[#ece9e3] bg-white'}`}>
+                        <span className={`w-5 h-5 shrink-0 rounded-md border-2 grid place-items-center
+                                          ${on ? 'bg-farhat border-farhat text-white' : 'border-[#d6d3cd] bg-white'}`}>
+                          {on && (
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"
+                                 strokeLinecap="round" className="w-3 h-3" aria-hidden="true"><path d="M5 12l5 5L20 7" /></svg>
+                          )}
+                        </span>
+                        <span className={`w-12 h-12 rounded-xl grid place-items-center shrink-0
+                                          ${addon.available ? 'bg-[#f3f1ec] text-ink/70' : 'bg-white text-body/40'}`}>
+                          <FinishingIcon name={addon.name} />
+                        </span>
+                        <span className="flex-1 min-w-0">
+                          <span className={`block text-sm font-bold ${addon.available ? '' : 'text-body/60'}`}>{addon.name}</span>
+                          <span className="block text-xs text-body mt-0.5">
+                            {!addon.available ? 'Not available yet' : addon.description || perWord(addon.unit)}
+                          </span>
+                        </span>
+                        {addon.available && (
+                          <span className="shrink-0 text-right">
+                            <span className="block text-sm font-extrabold text-farhat">
+                              {free ? 'Free' : `GHS ${Number(addon.price).toFixed(2)}`}
+                            </span>
+                            {!free && <span className="block text-[0.65rem] text-body">{perWord(addon.unit)}</span>}
+                          </span>
+                        )}
+                      </button>
+                      {askPacking && (
+                        <div role="radiogroup" aria-label={`${addon.name}: how many`}
+                             className="mt-1.5 flex gap-1 p-1 rounded-xl bg-[#f3f1ec]">
+                          {[{ value: false, label: 'One for all copies' }, { value: true, label: 'One per copy' }].map(opt => {
+                            const picked = packingFor(addon.id) === opt.value
+                            return (
+                              <button key={opt.label} type="button" role="radio" aria-checked={picked}
+                                      onClick={() => setPerCopy(prev => ({ ...prev, [addon.id]: opt.value }))}
+                                      className={`flex-1 py-2 rounded-lg text-xs font-semibold
+                                                  ${picked ? 'bg-white text-ink shadow-sm' : 'text-body'}`}>
+                                {opt.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+          )}
+
+          {quote?.minimum_applied && (
+            <div className="mt-5 rounded-2xl bg-[#f7f6f3] px-4 py-3 text-xs leading-relaxed text-body">
+              <p>
+                Our smallest order is GHS {quote.minimum}, and your size is printed exactly as you entered it.
+                {quote.covers_up_to > (Number(quantity) || 1) && (
+                  <> That GHS {quote.minimum} already covers up to{' '}
+                  <strong className="text-ink">{quote.covers_up_to} pieces</strong> this size.</>
+                )}
+              </p>
+              {quote.covers_up_to > (Number(quantity) || 1) && (
+                <button type="button" onClick={() => setQuantity(quote.covers_up_to)}
+                        className="mt-2 px-3 py-1.5 rounded-lg border border-ink text-xs font-semibold text-ink">
+                  Make it {quote.covers_up_to}
+                </button>
+              )}
+            </div>
+          )}
+
+          {problem && <p className="mt-4 text-sm text-farhat">{problem}</p>}
+
+          <div className="mt-5 flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-farhat/5 text-farhat text-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                 strokeLinecap="round" className="w-5 h-5 shrink-0" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" />
+            </svg>
+            Prices update as you customise.
+          </div>
+        </div>
+      </main>
+
+      {/* The total, held at the bottom. */}
+      <div className="fixed bottom-0 inset-x-0 z-30 bg-white rounded-t-3xl shadow-[0_-6px_24px_rgba(0,0,0,0.08)]"
+           style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+        <div className="max-w-md mx-auto px-4 pt-3 pb-3">
+          {breakdown && quote && (
+            <div className="mb-2 pb-2 border-b border-[#ece9e3] space-y-1 text-xs text-body">
+              <div className="flex justify-between gap-3">
+                <span>{product.name}{variants.length > 1 ? ` · ${service.label}` : ''}</span>
+                <span className="tabular-nums">GHS {quote.base_total ?? quote.total}</span>
+              </div>
+              {(quote.addons || []).map(a => (
+                <div key={a.service} className="flex justify-between gap-3">
+                  <span>+ {a.service_name}{a.detail ? ` (${a.detail})` : ''} × {a.quantity}</span>
+                  <span className="tabular-nums">GHS {a.total}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-3">
+            <div className="min-w-0">
+              <p className="text-xs text-body">
+                {comingSoon ? 'Not available yet'
+                  : waitingForFile ? 'Upload your file to see the total'
+                  : `Total (${Number(quantity) || 1} ${unit})`}
+              </p>
+              <p className="text-2xl font-extrabold text-farhat tabular-nums transition-opacity"
+                 style={{ opacity: pricing ? 0.45 : 1 }}>
+                {quote ? `GHS ${quote.total}` : '—'}
+              </p>
+            </div>
+            {quote && (
+              <button onClick={() => setBreakdown(b => !b)} aria-label="Show the breakdown"
+                      className="w-9 h-9 grid place-items-center text-body">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+                     strokeLinecap="round" strokeLinejoin="round"
+                     className={`w-5 h-5 transition-transform ${breakdown ? 'rotate-180' : ''}`} aria-hidden="true">
+                  <path d="M6 15l6-6 6 6" />
+                </svg>
+              </button>
+            )}
+            <button disabled={!canContinue} onClick={() => handleContinue('checkout')}
+                    className={`ml-auto flex-1 max-w-[190px] inline-flex items-center justify-center gap-2 py-3.5
+                                rounded-2xl text-sm font-bold
+                                ${canContinue ? 'bg-farhat text-white' : 'bg-[#f3f1ec] text-body/70'}`}>
+              <span className="truncate">{continueLabel}</span>
+              {canContinue && (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
+                     strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 shrink-0" aria-hidden="true">
+                  <path d="M5 12h14M13 6l6 6-6 6" />
+                </svg>
+              )}
+            </button>
+          </div>
+          {canContinue && (
+            <button onClick={() => handleContinue('catalogue')}
+                    className="mt-2 w-full text-center text-xs font-semibold text-body underline underline-offset-4">
+              Add to cart and keep shopping
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

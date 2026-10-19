@@ -35,7 +35,7 @@ function titleFor(pathname) {
 
 const TAB_ROOTS = ['/', '/categories', '/orders', '/account']
 
-export default function Header({ back = false, orderNumber = null, title = null, action = null }) {
+export default function Header({ back = false, orderNumber = null, title = null, action = null, subtitle = null, curve = true, extra = null }) {
   const { inApp } = useAccount()
   const { pathname } = useLocation()
 
@@ -45,17 +45,21 @@ export default function Header({ back = false, orderNumber = null, title = null,
         title={title ?? titleFor(pathname)}
         back={!TAB_ROOTS.includes(pathname)}
         action={action}
+        subtitle={subtitle}
+        curve={curve}
+        extra={extra}
       />
     )
   }
   return <BrandBar back={back} orderNumber={orderNumber} inApp={inApp} />
 }
 
-function AppBar({ title, back, action }) {
+function AppBar({ title, back, action, subtitle, curve, extra }) {
   const navigate = useNavigate()
   return (
+    <>
     <header
-      className="sticky top-0 z-20 bg-farhat text-white shadow-[0_1px_0_rgba(0,0,0,0.08)]"
+      className="sticky top-0 z-20 bg-farhat text-white"
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
     >
       <div className="max-w-md mx-auto h-14 px-2 grid grid-cols-[48px_1fr_48px] items-center">
@@ -73,6 +77,19 @@ function AppBar({ title, back, action }) {
         {action || <span />}
       </div>
     </header>
+    {/* The red runs on a little and the page curves up over it. The
+        subtitle, where a screen has one, sits in that red. Account turns
+        it off: its red carries on into the profile. */}
+    {curve && (
+      <div className="bg-farhat">
+        {subtitle && (
+          <p className="max-w-md mx-auto px-6 pb-3 -mt-1 text-center text-sm text-white/85">{subtitle}</p>
+        )}
+        {extra && <div className="max-w-md mx-auto px-4 pb-4">{extra}</div>}
+        <div className="h-6 bg-white rounded-t-[28px] translate-y-px" />
+      </div>
+    )}
+    </>
   )
 }
 

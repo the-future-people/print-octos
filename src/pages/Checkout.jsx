@@ -65,6 +65,8 @@ export default function Checkout() {
   useEffect(() => {
     if (!inApp || !account?.number || who || !saved) return undefined
     let live = true
+    setPhone(account.number)
+    setFirstName(account.first_name)
     identify(saved.order_number, saved.access_token, {
       phone: account.number, first_name: account.first_name,
     })
@@ -308,6 +310,12 @@ export default function Checkout() {
         <aside className="mt-8 lg:mt-0 lg:w-[320px] shrink-0">
           <div className="rounded-xl border border-rule bg-substrate/40 px-4 py-4">
 
+            {inApp && account ? (
+              <p className="text-sm">
+                <span className="font-semibold">Ordering as {account.first_name}</span>
+                <span className="text-body"> · {account.phone}</span>
+              </p>
+            ) : (<>
             <h2 className="text-[0.95rem] font-semibold">How do we reach you?</h2>
             <p className="mt-0.5 text-xs text-body">
               We’ll text you the moment it’s ready.
@@ -333,6 +341,7 @@ export default function Checkout() {
                            focus:outline-none focus:border-ink"
               />
             </div>
+            </>)}
 
             {who?.code_required && (
               <input
@@ -345,7 +354,7 @@ export default function Checkout() {
               />
             )}
 
-            {!identified && (
+            {!identified && (!inApp || who?.code_required) && (
               <button
                 onClick={handleIdentify}
                 disabled={busy || !phone.trim() || !firstName.trim()}
@@ -357,7 +366,7 @@ export default function Checkout() {
               </button>
             )}
 
-            {identified && who.discount_available && !issuedCode && (
+            {identified && who.discount_available && !issuedCode && !inApp && (
               <div className="mt-3 rounded-lg bg-farhat/5 border border-farhat/20
                               px-3 py-3">
                 <p className="text-sm font-semibold">Save 5% on this order</p>

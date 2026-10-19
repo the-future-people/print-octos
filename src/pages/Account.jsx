@@ -19,7 +19,7 @@ export default function Account() {
   const { account, ready } = useAccount()
   return (
     <div className="min-h-screen bg-white text-ink">
-      <Header action={account ? (
+      <Header curve={false} action={account ? (
         <button onClick={() => navigate('/settings')} aria-label="Settings"
                 className="w-11 h-11 grid place-items-center text-white">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
