@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "28060789836",
+    "project_id": "print-octos",
+    "storage_bucket": "print-octos.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:28060789836:android:b22281f846b796e8ca18e9",
+        "android_client_info": {
+          "package_name": "com.printoctos.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCEMRwswOYtnf9I5W-bLcQPEXir_ndI6bg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

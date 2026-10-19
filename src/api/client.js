@@ -181,5 +181,14 @@ export const accountSignOut = () =>
 
    export const accountOrders = () =>
      client.get('/api/v1/storefront/account/orders/')
+export const accountDevice = (token, platform) =>
+  client.post('/api/v1/storefront/account/device/', { token, platform })
+
+export const accountNotifications = () =>
+  client.get('/api/v1/storefront/account/notifications/')
+
+export const accountNotificationsRead = () =>
+  client.post('/api/v1/storefront/account/notifications/read/')
+
 
 export default client

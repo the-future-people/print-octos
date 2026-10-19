@@ -1,4 +1,6 @@
 import { useLocation, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { accountNotifications } from '../api/client'
 import { useCart } from '../lib/CartContext.jsx'
 import { useAccount } from '../lib/AccountContext.jsx'
 import logo from '../assets/farhat-logo.png'
@@ -24,6 +26,7 @@ function titleFor(pathname) {
   if (pathname === '/checkout') return 'My cart'
   if (pathname === '/more') return 'More'
   if (pathname === '/account') return 'Account'
+  if (pathname === '/notifications') return 'Notifications'
   if (pathname === '/paid') return 'Payment'
   if (pathname.startsWith('/track')) return 'Order details'
   return ''
@@ -118,6 +121,7 @@ function BrandBar({ back, orderNumber, inApp }) {
           </button>
 
           <div className="ml-auto flex items-center gap-4 sm:gap-5 shrink-0 -mr-0.5">
+            {inApp && account && <Bell />}
             {inApp ? (
               <button
                 onClick={() => navigate('/account')}
@@ -203,5 +207,37 @@ function BrandBar({ back, orderNumber, inApp }) {
         </div>
       </div>
     </header>
+  )
+}
+
+/**
+ * The bell on Home, with how many messages are unread. Checked every
+ * minute, and at once when a push arrives while the app is open.
+ */
+function Bell() {
+  const navigate = useNavigate()
+  const { data } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => accountNotifications().then(r => r.data),
+    refetchInterval: 60_000,
+  })
+  const unread = data?.unread || 0
+
+  return (
+    <button onClick={() => navigate('/notifications')}
+            aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'}
+            className="relative text-white/90 hover:text-white transition-colors">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+           strokeLinecap="round" strokeLinejoin="round" className="w-[22px] h-[22px]" aria-hidden="true">
+        <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+        <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+      </svg>
+      {unread > 0 && (
+        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-gold
+                         text-ink text-[0.6rem] font-extrabold leading-4 text-center tabular-nums">
+          {unread}
+        </span>
+      )}
+    </button>
   )
 }

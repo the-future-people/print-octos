@@ -10,6 +10,8 @@ import Account from './pages/Account.jsx'
 import Categories from './pages/Categories.jsx'
 import Orders from './pages/Orders.jsx'
 import More from './pages/More.jsx'
+import Notifications from './pages/Notifications.jsx'
+import PushBridge from './lib/PushBridge.jsx'
 import LaunchSplash from './components/LaunchSplash.jsx'
 import TabBar from './components/TabBar.jsx'
 import { AccountProvider } from './lib/AccountContext.jsx'
@@ -55,6 +57,7 @@ export default function App() {
         <Route path="/orders" element={<Orders />} />
         <Route path="/more" element={<More />} />
         <Route path="/account" element={<Account />} />
+        <Route path="/notifications" element={<Notifications />} />
         <Route path="/service/:serviceId" element={<Specify />} />
         <Route path="/checkout" element={<Checkout />} />
         <Route path="/track" element={<Track />} />
@@ -67,6 +70,7 @@ export default function App() {
         <Route path="/t/:code" element={<ShortLink />} />
       </Routes>
       <TabBar />
+      <PushBridge />
       {opening && <LaunchSplash onDone={opened} />}
     </AccountProvider>
   )
