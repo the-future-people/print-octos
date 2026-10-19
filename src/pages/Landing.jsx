@@ -5,6 +5,7 @@ import { accountOrders, getCatalogue } from '../api/client'
 import { ServiceIcon } from '../lib/icons.jsx'
 import { serviceImage } from '../lib/images'
 import Header from '../components/Header.jsx'
+import ProductBadge from '../components/ProductBadge.jsx'
 import { useAccount } from '../lib/AccountContext.jsx'
 
 /**
@@ -81,7 +82,7 @@ export default function Landing() {
       {/* The hero carries on in the same red, so the bar above reads as
           part of it rather than a separate strip. */}
       <section className="bg-farhat">
-        <div className={`max-w-4xl mx-auto px-5 ${inApp ? 'pt-2 pb-5' : 'pt-7 pb-8'}`}>
+           <div className={`max-w-4xl mx-auto px-5 ${inApp ? 'pt-4 pb-6' : 'pt-7 pb-8'}`}>
           {inApp ? (
             <>
               <p className="text-xl font-bold text-white leading-tight">
@@ -106,7 +107,7 @@ export default function Landing() {
               results appear as they type. Worth the space here: a
               customer who does not know the word for what they want
               needs the search to look like the way forward. */}
-          <div className={`${inApp ? 'mt-3' : 'mt-5'} flex items-center gap-2 p-1.5 pl-4
+             <div className={`${inApp ? 'mt-4' : 'mt-5'} flex items-center gap-2 p-1.5 pl-4
                           rounded-full bg-white focus-within:ring-2 focus-within:ring-white/60`}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
                  strokeLinecap="round" className="w-4 h-4 shrink-0 text-body"
@@ -147,18 +148,18 @@ export default function Landing() {
               the same thing as finding it in the grid below. Only what
               can be ordered now: a chip that leads nowhere is a let-down. */}
           {!searching && ready.length > 0 && (
-            <div className="mt-3 flex gap-2 overflow-x-auto pb-1
+               <div className="mt-4 flex gap-2 overflow-x-auto pb-1
                             [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {ready.map(s => (
                 <button
                   key={s.id}
                   onClick={() => navigate(`/service/${s.id}`)}
-                  className="shrink-0 inline-flex items-center gap-1.5 pl-2.5 pr-3 py-1.5
+                  className="shrink-0 inline-flex items-center gap-2 pl-1.5 pr-3 py-1.5
                              rounded-full bg-white/15 text-white text-xs
                              hover:bg-white/25 transition-colors
                              focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
                 >
-                  <ServiceIcon name={s.name} className="w-3.5 h-3.5 shrink-0" />
+                  <ProductBadge name={s.base_name || s.name} />
                   {s.name}
                 </button>
               ))}
