@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { accountOrders, getCatalogue } from '../api/client'
@@ -22,6 +23,13 @@ import { useAccount } from '../lib/AccountContext.jsx'
  *
  * The tiles are built around a photograph. Printing is bought by eye:
  * nobody orders a banner from a description.
+ *
+ * In the app, the website's headline gives way to a greeting: someone
+ * who installed Print Octos already knows what it is for, and the top
+ * of the screen is better spent on their order and the products.
+ *
+ * The search filters the catalogue as they type, by name and by
+ * description, on the website and in the app alike.
  */
 
 function pricingBasis(service) {
@@ -43,9 +51,18 @@ const ordered = list => [
   ...list.filter(s => s.available === false),
 ]
 
+function greeting() {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 17) return 'Good afternoon'
+  return 'Good evening'
+}
+
 export default function Landing() {
   const navigate = useNavigate()
-  const { inApp } = useAccount()
+  const { inApp, account } = useAccount()
+  const [query, setQuery] = useState('')
+  const searching = query.trim().length > 0
 
   const { data: services = [], isLoading, isError } = useQuery({
     queryKey: ['catalogue'],
@@ -64,22 +81,33 @@ export default function Landing() {
       {/* The hero carries on in the same red, so the bar above reads as
           part of it rather than a separate strip. */}
       <section className="bg-farhat">
-        <div className="max-w-4xl mx-auto px-5 pt-7 pb-8">
-          <p className="text-2xl sm:text-3xl font-bold text-white leading-tight
-                        text-balance">
-            Order your printing <span className="text-gold">before you get here.</span>
-          </p>
-          <p className="mt-2 text-sm text-white/85 max-w-[46ch]">
-            Pick what you need, see the price and the day it’s ready, and pay
-            now. Collect at Westland.
-          </p>
+        <div className={`max-w-4xl mx-auto px-5 ${inApp ? 'pt-2 pb-5' : 'pt-7 pb-8'}`}>
+          {inApp ? (
+            <>
+              <p className="text-xl font-bold text-white leading-tight">
+                {account ? `${greeting()}, ${account.first_name}` : greeting()}
+              </p>
+              <p className="mt-0.5 text-sm text-white/85">What are we printing today?</p>
+            </>
+          ) : (
+            <>
+              <p className="text-2xl sm:text-3xl font-bold text-white leading-tight
+                            text-balance">
+                Order your printing <span className="text-gold">before you get here.</span>
+              </p>
+              <p className="mt-2 text-sm text-white/85 max-w-[46ch]">
+                Pick what you need, see the price and the day it’s ready, and pay
+                now. Collect at Westland.
+              </p>
+            </>
+          )}
 
-          {/* The button is a second way to do the same thing as Enter.
-              Worth the space here: a customer who does not know the word
-              for what they want needs the search to look like the way
-              forward, not like a filter. */}
-          <div className="mt-5 flex items-center gap-2 p-1.5 pl-4 rounded-full bg-white
-                          focus-within:ring-2 focus-within:ring-white/60">
+          {/* The button is a second way to do the same thing as typing:
+              results appear as they type. Worth the space here: a
+              customer who does not know the word for what they want
+              needs the search to look like the way forward. */}
+          <div className={`${inApp ? 'mt-3' : 'mt-5'} flex items-center gap-2 p-1.5 pl-4
+                          rounded-full bg-white focus-within:ring-2 focus-within:ring-white/60`}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
                  strokeLinecap="round" className="w-4 h-4 shrink-0 text-body"
                  aria-hidden="true">
@@ -88,23 +116,37 @@ export default function Landing() {
             </svg>
             <input
               type="search"
-              placeholder="What are you printing?"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+              placeholder={inApp ? 'Search banners, cards, prints…' : 'What are you printing?'}
+              aria-label="Search what we print"
               className="flex-1 min-w-0 bg-transparent text-[0.95rem]
                          placeholder:text-body/70 focus:outline-none
                          [&::-webkit-search-cancel-button]:hidden"
             />
-            <button className="shrink-0 px-5 sm:px-6 py-2.5 rounded-full bg-farhat
-                               text-white text-sm font-semibold hover:opacity-90
-                               transition-opacity focus:outline-none
-                               focus-visible:ring-2 focus-visible:ring-white">
-              Search
-            </button>
+            {searching ? (
+              <button onClick={() => setQuery('')} aria-label="Clear search"
+                      className="shrink-0 w-9 h-9 grid place-items-center rounded-full
+                                 text-body text-lg leading-none">
+                ×
+              </button>
+            ) : (
+              <button
+                onClick={e => e.currentTarget.parentElement.querySelector('input')?.focus()}
+                className="shrink-0 px-5 sm:px-6 py-2.5 rounded-full bg-farhat
+                           text-white text-sm font-semibold hover:opacity-90
+                           transition-opacity focus:outline-none
+                           focus-visible:ring-2 focus-visible:ring-white">
+                Search
+              </button>
+            )}
           </div>
 
           {/* The chips are the catalogue's own names, so tapping one is
               the same thing as finding it in the grid below. Only what
               can be ordered now: a chip that leads nowhere is a let-down. */}
-          {ready.length > 0 && (
+          {!searching && ready.length > 0 && (
             <div className="mt-3 flex gap-2 overflow-x-auto pb-1
                             [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {ready.map(s => (
@@ -137,60 +179,70 @@ export default function Landing() {
           </p>
         )}
 
-        {inApp && <AppHome services={services} navigate={navigate} />}
+        {searching ? (
+          <SearchResults services={services} query={query} navigate={navigate} />
+        ) : (
+          <>
+            {inApp && <AppHome services={services} navigate={navigate} />}
 
-        {!inApp && processed.length > 0 && (
-          <Section
-            title="Order ahead"
-            note="Banners, stickers and cards: pick one to get started."
-            services={processed}
-            onOpen={id => navigate(`/service/${id}`)}
-          />
+            {!inApp && processed.length > 0 && (
+              <Section
+                title="Order ahead"
+                note="Banners, stickers and cards: pick one to get started."
+                services={processed}
+                onOpen={id => navigate(`/service/${id}`)}
+              />
+            )}
+
+            {!inApp && documents.length > 0 && (
+              <Section
+                title="Documents & flyers"
+                note="Send your file and collect it printed, with lamination, binding or an envelope if you like."
+                services={documents}
+                onOpen={id => navigate(`/service/${id}`)}
+              />
+            )}
+
+            {!isLoading && !isError && services.length === 0 && (
+              <p className="py-10 text-sm text-body">
+                Nothing to order ahead yet. Walk in and we’ll sort you out.
+              </p>
+            )}
+
+            {!inApp && (
+              <>
+                <section className="mt-8 rounded-xl bg-farhat/5 border border-farhat/20
+                                    px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
+                  <div className="min-w-0">
+                    <p className="text-[0.95rem] font-semibold">Not sure what it’s called?</p>
+                    <p className="mt-1 text-sm leading-relaxed text-body">
+                      Send a photo of what you have. We’ll tell you what it takes and
+                      what it costs.
+                    </p>
+                  </div>
+                  <button className="shrink-0 px-5 py-2.5 rounded-lg bg-farhat text-white
+                                     text-sm font-semibold hover:opacity-90 transition-opacity
+                                     focus:outline-none focus-visible:ring-2 focus-visible:ring-ink">
+                    Send a photo
+                  </button>
+                </section>
+
+                <footer className="mt-8 pt-5 border-t border-rule">
+                  <p className="flex items-center justify-center gap-2 text-sm text-body">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"
+                         strokeLinecap="round" strokeLinejoin="round"
+                         className="w-4 h-4 shrink-0" aria-hidden="true">
+                      <path d="M3 9l1.5-5h15L21 9" />
+                      <path d="M4 9h16v11H4z" />
+                      <path d="M9 20v-6h6v6" />
+                    </svg>
+                    Just need a photocopy? Walk in, or search above.
+                  </p>
+                </footer>
+              </>
+            )}
+          </>
         )}
-
-        {!inApp && documents.length > 0 && (
-          <Section
-            title="Documents & flyers"
-            note="Send your file and collect it printed, with lamination, binding or an envelope if you like."
-            services={documents}
-            onOpen={id => navigate(`/service/${id}`)}
-          />
-        )}
-
-        {!isLoading && !isError && services.length === 0 && (
-          <p className="py-10 text-sm text-body">
-            Nothing to order ahead yet. Walk in and we’ll sort you out.
-          </p>
-        )}
-
-        <section className="mt-8 rounded-xl bg-farhat/5 border border-farhat/20
-                            px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
-          <div className="min-w-0">
-            <p className="text-[0.95rem] font-semibold">Not sure what it’s called?</p>
-            <p className="mt-1 text-sm leading-relaxed text-body">
-              Send a photo of what you have. We’ll tell you what it takes and
-              what it costs.
-            </p>
-          </div>
-          <button className="shrink-0 px-5 py-2.5 rounded-lg bg-farhat text-white
-                             text-sm font-semibold hover:opacity-90 transition-opacity
-                             focus:outline-none focus-visible:ring-2 focus-visible:ring-ink">
-            Send a photo
-          </button>
-        </section>
-
-        <footer className="mt-8 pt-5 border-t border-rule">
-          <p className="flex items-center justify-center gap-2 text-sm text-body">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"
-                 strokeLinecap="round" strokeLinejoin="round"
-                 className="w-4 h-4 shrink-0" aria-hidden="true">
-              <path d="M3 9l1.5-5h15L21 9" />
-              <path d="M4 9h16v11H4z" />
-              <path d="M9 20v-6h6v6" />
-            </svg>
-            Just need a photocopy? Walk in, or search above.
-          </p>
-        </footer>
 
       </main>
     </div>
@@ -282,11 +334,68 @@ function Tile({ service, onOpen }) {
   )
 }
 
+// ── Search ───────────────────────────────────────────────────────
+
+// Westland's own line and map, as on the More tab.
+const BRANCH_PHONE = '0556244194'
+const BRANCH_MAP = 'https://www.google.com/maps/search/?api=1&query=Farhat+Printing+Press+Westland+Accra'
+
+/**
+ * Every word they typed has to appear somewhere in the product's name
+ * or description, so "a4 colour" finds A4 Colour Printing and "ban"
+ * finds banners. What can be ordered comes first.
+ */
+function matches(services, query) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  return ordered(services.filter(s => {
+    const text = `${s.name} ${s.base_name || ''} ${s.description || ''}`.toLowerCase()
+    return words.every(w => text.includes(w))
+  }))
+}
+
+function SearchResults({ services, query, navigate }) {
+  const found = matches(services, query)
+  return (
+    <section className="mt-4">
+      <p className="text-xs font-bold uppercase tracking-wider text-body">
+        {found.length} result{found.length === 1 ? '' : 's'}
+      </p>
+      <div className="mt-2 rounded-2xl border border-rule divide-y divide-rule overflow-hidden">
+        {found.map(s => {
+          const soon = s.available === false
+          const photo = serviceImage(s.base_name || s.name)
+          return (
+            <button key={s.id} onClick={() => !soon && navigate(`/service/${s.id}`)} disabled={soon}
+                    className="w-full flex items-center gap-3 px-3 py-3 text-left bg-white
+                               active:bg-substrate disabled:cursor-default">
+              {photo ? (
+                <img src={photo} alt="" className={`w-12 h-12 rounded-xl object-cover shrink-0 ${soon ? 'grayscale opacity-60' : ''}`} />
+              ) : (
+                <span className="w-12 h-12 rounded-xl bg-substrate grid place-items-center shrink-0">
+                  <ServiceIcon name={s.name} className="w-5 h-5 text-body/60" />
+                </span>
+              )}
+              <span className={`flex-1 min-w-0 ${soon ? 'opacity-60' : ''}`}>
+                <span className="block text-sm font-semibold truncate">{s.name}</span>
+                <span className={`block mt-0.5 text-xs ${soon ? 'text-body' : 'text-farhat font-semibold'}`}>
+                  {soon ? 'Coming soon' : priceLine(s) || pricingBasis(s)}
+                </span>
+              </span>
+              {!soon && <span className="text-body text-lg" aria-hidden="true">›</span>}
+            </button>
+          )
+        })}
+      </div>
+      <p className="mt-4 text-center text-sm text-body">
+        {found.length === 0 ? `Nothing called “${query.trim()}” yet. ` : 'Can’t find it? '}
+        <a href={`tel:${BRANCH_PHONE}`} className="font-semibold text-farhat">Call us</a>
+        {' '}and we’ll help.
+      </p>
+    </section>
+  )
+}
 
 // ── The app's home, below the hero ───────────────────────────────
-
-// Westland's map, as on the More tab.
-const BRANCH_MAP = 'https://www.google.com/maps/search/?api=1&query=Farhat+Printing+Press+Westland+Accra'
 
 function priceLine(s) {
   const price = s.price ? Number(s.price).toFixed(2) : null
