@@ -10,16 +10,26 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { accountCode, accountOrders, accountVerify } from '../api/client'
+import { accountCode, accountOrders, accountUpdate, accountVerify } from '../api/client'
 import { useAccount } from '../lib/AccountContext.jsx'
 import Header from '../components/Header.jsx'
 
 export default function Account() {
+  const navigate = useNavigate()
   const { account, ready } = useAccount()
   return (
     <div className="min-h-screen bg-white text-ink">
-      <Header back />
-      <main className="max-w-md mx-auto px-5 py-8">
+      <Header action={account ? (
+        <button onClick={() => navigate('/settings')} aria-label="Settings"
+                className="w-11 h-11 grid place-items-center text-white">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+               strokeLinecap="round" strokeLinejoin="round" className="w-[22px] h-[22px]" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+          </svg>
+        </button>
+      ) : null} />
+      <main className={`max-w-md mx-auto px-5 ${account ? 'pb-6' : 'py-8'}`}>
         {!ready ? null : account ? <Signed account={account} /> : <SignIn />}
       </main>
     </div>
@@ -129,33 +139,207 @@ function SignIn() {
   )
 }
 
+const BRANCH_PHONE = '0556244194'
+const BRANCH_MAP = 'https://www.google.com/maps/search/?api=1&query=Farhat+Printing+Press+Westland+Accra'
+
+function Row({ icon, label, note, value, badge, onClick, muted }) {
+  return (
+    <button onClick={onClick} disabled={!onClick}
+            className="w-full flex items-center gap-3 px-4 py-3 text-left bg-white
+                       active:bg-substrate disabled:cursor-default">
+      <span className={`w-10 h-10 rounded-full grid place-items-center shrink-0
+                        ${muted ? 'bg-substrate text-body' : 'bg-farhat/10 text-farhat'}`}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+             strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5" aria-hidden="true">
+          {icon}
+        </svg>
+      </span>
+      <span className="flex-1 min-w-0">
+        {value !== undefined ? (
+          <>
+            <span className="block text-xs text-body">{label}</span>
+            <span className="block text-[0.95rem] font-semibold truncate">{value}</span>
+          </>
+        ) : (
+          <>
+            <span className="block text-[0.95rem] font-semibold">{label}</span>
+            {note && <span className="block text-xs text-body mt-0.5">{note}</span>}
+          </>
+        )}
+      </span>
+      {badge}
+      {onClick && !badge && (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+             strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 text-body/60 shrink-0"
+             aria-hidden="true">
+          <path d="M9 6l6 6-6 6" />
+        </svg>
+      )}
+    </button>
+  )
+}
+
+function Group({ title, action, children }) {
+  return (
+    <section className="mt-5">
+      <div className="flex items-baseline justify-between px-1">
+        <h2 className="text-base font-bold">{title}</h2>
+        {action}
+      </div>
+      <div className="mt-2 rounded-2xl border border-rule divide-y divide-rule overflow-hidden">
+        {children}
+      </div>
+    </section>
+  )
+}
+
+/**
+ * The customer's own space: who they are, what they have ordered, and
+ * the ways to reach the shop. The order lists themselves live in the
+ * Orders tab; here they are a count.
+ */
 function Signed({ account }) {
   const navigate = useNavigate()
-  const { signOut } = useAccount()
+  const { signOut, setAccount } = useAccount()
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState(account.first_name)
+  const [saving, setSaving] = useState(false)
   const [leaving, setLeaving] = useState(false)
 
+  const { data } = useQuery({
+    queryKey: ['my-orders'],
+    queryFn: () => accountOrders().then(r => r.data),
+  })
+  const active = data?.active?.length ?? 0
+  const collected = data?.collected?.length ?? 0
+
+  const since = account.member_since
+    ? new Date(account.member_since).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+    : null
+
+  async function saveName() {
+    if (!name.trim() || name.trim() === account.first_name) { setEditing(false); return }
+    setSaving(true)
+    try {
+      const { data: updated } = await accountUpdate({ first_name: name.trim() })
+      setAccount(updated)
+      setEditing(false)
+    } finally { setSaving(false) }
+  }
+
+  const stats = [
+    { n: active + collected, label: 'Orders', tone: 'bg-farhat/10 text-farhat',
+      icon: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><path d="M9 8h6M9 12h6" /></> },
+    { n: active, label: 'Active', tone: 'bg-amber-100 text-amber-600',
+      icon: <><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></> },
+    { n: collected, label: 'Collected', tone: 'bg-emerald-100 text-emerald-600',
+      icon: <><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /><path d="M4 7.5l8 4.5 8-4.5M12 12v9" /></> },
+  ]
+
   return (
-    <div>
-      <div className="flex items-center gap-3">
-        <span className="w-12 h-12 rounded-full bg-farhat text-white grid place-items-center
-                         text-lg font-bold">
+    <div className="-mx-5">
+      {/* The profile, on the red the header began. */}
+      <div className="bg-farhat px-5 pt-3 pb-12 text-center text-white">
+        <span className="relative inline-grid place-items-center w-24 h-24 rounded-full bg-white
+                         text-farhat text-4xl font-extrabold ring-4 ring-gold">
           {(account.first_name || '?').charAt(0).toUpperCase()}
+          <span className="absolute top-0 left-1 w-5 h-5 rounded-full bg-gold border-[3px] border-farhat" />
         </span>
-        <div>
-          <h1 className="text-xl font-bold">{account.first_name}</h1>
-          <p className="text-sm text-body">{account.phone}</p>
-        </div>
+        <p className="mt-3 text-2xl font-bold">{account.first_name}</p>
+        {since && <p className="mt-0.5 text-sm text-white/85">Customer since {since}</p>}
       </div>
 
-      <MyOrders />
+      <div className="px-4">
+        <div className="-mt-8 grid grid-cols-3 rounded-2xl bg-white border border-rule
+                        shadow-[0_6px_20px_rgba(0,0,0,0.07)] divide-x divide-rule">
+          {stats.map(s => (
+            <button key={s.label} onClick={() => navigate('/orders')}
+                    className="flex flex-col items-center gap-1.5 py-3.5 active:bg-substrate">
+              <span className={`w-9 h-9 rounded-full grid place-items-center ${s.tone}`}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+                     strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]"
+                     aria-hidden="true">{s.icon}</svg>
+              </span>
+              <span className="text-xl font-extrabold leading-none tabular-nums">{s.n}</span>
+              <span className="text-xs text-body">{s.label}</span>
+            </button>
+          ))}
+        </div>
 
-      <button
-        onClick={async () => { setLeaving(true); await signOut(); navigate('/', { replace: true }) }}
-        disabled={leaving}
-        className="mt-6 w-full px-4 py-3 rounded-lg border border-rule text-sm font-semibold
-                   disabled:opacity-40">
-        {leaving ? 'Signing out…' : 'Sign out'}
-      </button>
+        <Group
+          title="Your details"
+          action={!editing && (
+            <button onClick={() => { setName(account.first_name); setEditing(true) }}
+                    className="inline-flex items-center gap-1 text-sm font-semibold text-farhat">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                   strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4" aria-hidden="true">
+                <path d="M4 20h4L19 9l-4-4L4 16z" />
+              </svg>
+              Edit
+            </button>
+          )}
+        >
+          {editing ? (
+            <div className="px-4 py-3 bg-white">
+              <label className="block text-xs text-body">First name</label>
+              <input value={name} onChange={e => setName(e.target.value)} autoFocus maxLength={100}
+                     className="mt-1 w-full px-3 py-2.5 rounded-lg border border-rule text-[1rem]
+                                focus:outline-none focus:border-ink" />
+              <div className="mt-3 flex gap-2">
+                <button onClick={() => setEditing(false)}
+                        className="flex-1 py-2.5 rounded-lg border border-rule text-sm font-semibold">
+                  Cancel
+                </button>
+                <button onClick={saveName} disabled={saving || !name.trim()}
+                        className="flex-1 py-2.5 rounded-lg bg-farhat text-white text-sm font-semibold
+                                   disabled:opacity-40">
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <Row label="First name" value={account.first_name}
+                 icon={<><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>} />
+          )}
+          <Row label="Phone number" value={account.phone}
+               icon={<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z" />}
+               badge={
+                 <span className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full
+                                  bg-emerald-50 text-emerald-700 text-xs font-bold">
+                   <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5" aria-hidden="true">
+                     <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm5 7.2l-6.1 6.9a1 1 0 0 1-1.5 0L6 12.6a1 1 0 0 1 1.5-1.3l2.6 2.9 5.4-6.1A1 1 0 0 1 17 9.2z" />
+                   </svg>
+                   Verified
+                 </span>
+               } />
+        </Group>
+
+        <Group title="Print Octos">
+          <Row label="Notifications" note="Payment and ready messages"
+               onClick={() => navigate('/notifications')}
+               icon={<><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></>} />
+          <Row label="My orders" note="Track what’s being made and collected"
+               onClick={() => navigate('/orders')}
+               icon={<><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /><path d="M4 7.5l8 4.5 8-4.5M12 12v9" /></>} />
+        </Group>
+
+        <Group title="Support & more">
+          <Row label="Call us" note={BRANCH_PHONE.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3')}
+               onClick={() => { window.location.href = `tel:${BRANCH_PHONE}` }}
+               icon={<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z" />} />
+          <Row label="Find our branch" note="Westland, Accra · directions"
+               onClick={() => window.open(BRANCH_MAP, '_blank')}
+               icon={<><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z" /><circle cx="12" cy="9.5" r="2.5" /></>} />
+          <Row label="Terms & Privacy" note="Terms of service and privacy policy"
+               onClick={() => navigate('/terms')}
+               icon={<><path d="M7 3h7l4 4v14H7z" /><path d="M10 12h5M10 16h5" /></>} />
+          <Row label={leaving ? 'Signing out…' : 'Log out'} note="Sign out on this phone"
+               onClick={leaving ? undefined : async () => { setLeaving(true); await signOut(); navigate('/', { replace: true }) }}
+               icon={<><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" /><path d="M10 16l-4-4 4-4M6 12h10" /></>} />
+        </Group>
+
+        <p className="mt-6 mb-2 text-center text-[0.7rem] text-body">Print Octos · Farhat Printing Press</p>
+      </div>
     </div>
   )
 }

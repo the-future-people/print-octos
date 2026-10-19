@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Routes, Route, useNavigate } from 'react-router-dom'
+import { Navigate, Routes, Route, useNavigate } from 'react-router-dom'
 import Landing from './pages/Landing.jsx'
 import Specify from './pages/Specify.jsx'
 import Checkout from './pages/Checkout.jsx'
@@ -9,7 +9,8 @@ import ShortLink from './pages/ShortLink.jsx'
 import Account from './pages/Account.jsx'
 import Categories from './pages/Categories.jsx'
 import Orders from './pages/Orders.jsx'
-import More from './pages/More.jsx'
+import Settings from './pages/Settings.jsx'
+import Terms from './pages/Terms.jsx'
 import Notifications from './pages/Notifications.jsx'
 import PushBridge from './lib/PushBridge.jsx'
 import LaunchSplash from './components/LaunchSplash.jsx'
@@ -55,7 +56,10 @@ export default function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/categories" element={<Categories />} />
         <Route path="/orders" element={<Orders />} />
-        <Route path="/more" element={<More />} />
+        {/* More became the Account tab; old links still arrive. */}
+        <Route path="/more" element={<Navigate to="/account" replace />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="/terms" element={<Terms />} />
         <Route path="/account" element={<Account />} />
         <Route path="/notifications" element={<Notifications />} />
         <Route path="/service/:serviceId" element={<Specify />} />

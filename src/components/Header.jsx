@@ -24,17 +24,18 @@ function titleFor(pathname) {
   if (pathname === '/categories') return 'Categories'
   if (pathname === '/orders') return 'My orders'
   if (pathname === '/checkout') return 'My cart'
-  if (pathname === '/more') return 'More'
-  if (pathname === '/account') return 'Account'
+  if (pathname === '/account') return 'My account'
+  if (pathname === '/settings') return 'Settings'
+  if (pathname === '/terms') return 'Terms & Privacy'
   if (pathname === '/notifications') return 'Notifications'
   if (pathname === '/paid') return 'Payment'
   if (pathname.startsWith('/track')) return 'Order details'
   return ''
 }
 
-const TAB_ROOTS = ['/', '/categories', '/orders', '/more']
+const TAB_ROOTS = ['/', '/categories', '/orders', '/account']
 
-export default function Header({ back = false, orderNumber = null, title = null }) {
+export default function Header({ back = false, orderNumber = null, title = null, action = null }) {
   const { inApp } = useAccount()
   const { pathname } = useLocation()
 
@@ -43,13 +44,14 @@ export default function Header({ back = false, orderNumber = null, title = null 
       <AppBar
         title={title ?? titleFor(pathname)}
         back={!TAB_ROOTS.includes(pathname)}
+        action={action}
       />
     )
   }
   return <BrandBar back={back} orderNumber={orderNumber} inApp={inApp} />
 }
 
-function AppBar({ title, back }) {
+function AppBar({ title, back, action }) {
   const navigate = useNavigate()
   return (
     <header
@@ -68,7 +70,7 @@ function AppBar({ title, back }) {
           </button>
         ) : <span />}
         <h1 className="text-center text-[1.05rem] font-bold truncate">{title}</h1>
-        <span />
+        {action || <span />}
       </div>
     </header>
   )

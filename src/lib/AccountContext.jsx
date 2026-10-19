@@ -73,7 +73,7 @@ export function AccountProvider({ children }) {
   }, [])
 
   return (
-    <AccountContext.Provider value={{ account, ready, signedIn, signOut, inApp: inApp() }}>
+    <AccountContext.Provider value={{ account, ready, signedIn, signOut, setAccount, inApp: inApp() }}>
       {children}
     </AccountContext.Provider>
   )

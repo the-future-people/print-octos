@@ -190,5 +190,7 @@ export const accountNotifications = () =>
 export const accountNotificationsRead = () =>
   client.post('/api/v1/storefront/account/notifications/read/')
 
+export const accountUpdate = details =>
+  client.patch('/api/v1/storefront/account/me/', details)
 
 export default client
