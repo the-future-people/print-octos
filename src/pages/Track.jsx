@@ -5,6 +5,8 @@ import { getOrder, findOrder } from '../api/client'
 import { serviceImage } from '../lib/images'
 import Header from '../components/Header.jsx'
 import CollectionMap from '../components/CollectionMap.jsx'
+import ProductBadge from '../components/ProductBadge.jsx'
+import { useAccount } from '../lib/AccountContext.jsx'
 
 /**
  * An order, as a record of it.
@@ -45,6 +47,7 @@ export default function Track() {
 }
 
 function Record({ orderNumber, token }) {
+  const { inApp } = useAccount()
   const { data: order, isLoading, isError } = useQuery({
     queryKey: ['tracked-order', orderNumber],
     queryFn: () => getOrder(orderNumber, token).then(r => r.data),
@@ -83,6 +86,9 @@ function Record({ orderNumber, token }) {
       </Shell>
     )
   }
+
+  // In the app, the same order as an app screen.
+  if (inApp) return <AppTrack order={order} />
 
   const reached = STAGES.findIndex(s => s.key === stageOf(order))
   const lines = order.line_items || []
@@ -606,6 +612,322 @@ function Shell({ orderNumber, children }) {
     <div className="min-h-screen bg-white text-ink">
       <Header back orderNumber={orderNumber} />
       <main className="max-w-4xl mx-auto px-5">{children}</main>
+    </div>
+  )
+}
+
+
+
+// ── The app's order details ──────────────────────────────────────
+
+// The customer's words for each step, collected included.
+const APP_STEPS = [
+  { key: 'paid', label: 'Order received' },
+  { key: 'inspecting', label: 'Checking your file' },
+  { key: 'press', label: 'In press' },
+  { key: 'finishing', label: 'Finishing' },
+  { key: 'ready', label: 'Ready to collect' },
+  { key: 'collected', label: 'Collected' },
+]
+
+// An icon of what happens at each step.
+const STEP_ICON = {
+  paid: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><path d="M9 9l2 2 4-4" /></>,
+  inspecting: <><path d="M14 3H6v18h7" /><path d="M14 3l4 4v3" /><circle cx="16.5" cy="16.5" r="3" /><path d="M19 19l2 2" /></>,
+  press: <><path d="M7 9V3h10v6" /><rect x="3" y="9" width="18" height="8" rx="2" /><path d="M7 14h10v7H7z" /></>,
+  finishing: <><circle cx="6" cy="17" r="2.5" /><circle cx="6" cy="7" r="2.5" /><path d="M8 8.5L20 18M8 15.5L20 6" /></>,
+  ready: <><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /><path d="M4 7.5l8 4.5 8-4.5M12 12v9" /></>,
+  collected: <><path d="M7 11V7a5 5 0 0 1 10 0" /><path d="M4 11h16l-1 9H5z" /><path d="M10 15l2 2 3-3" /></>,
+}
+
+// What kind of job this is, for the words: a banner or sticker printed
+// to size, document pages, or cards.
+function jobKind(lines) {
+  const first = lines[0] || {}
+  const n = `${first.base_name || ''} ${first.service_name || ''}`.toLowerCase()
+  if ((first.specifications || {}).width_in) return /sticker|sav/.test(n) ? 'sticker' : 'banner'
+  if (/card/.test(n)) return 'cards'
+  return 'pages'
+}
+
+// The finishing this customer actually chose, in a few words.
+function finishingWords(lines) {
+  const names = lines.flatMap(l => (l.addons || []).map(a => (a.service_name || '').replace(/\s*\(.*\)$/, '')))
+  const unique = [...new Set(names.map(n => n.replace(/^A[3-5]\s+/, '').toLowerCase()))]
+  return unique
+}
+
+function explain(key, order, lines) {
+  const kind = jobKind(lines)
+  const finishing = finishingWords(lines)
+  const branch = order.branch?.name || 'Westland Branch'
+  const what = { banner: 'banner', sticker: 'stickers', cards: 'business cards', pages: 'pages' }[kind]
+  switch (key) {
+    case 'paid':
+      return 'We’ve got your order and your payment. It’s in the queue to be checked.'
+    case 'inspecting':
+      return kind === 'pages'
+        ? 'A coordinator is checking your file: the pages, the sides and the copies you asked for, so it prints right the first time.'
+        : 'A coordinator is checking your artwork against the size you chose, so it prints right the first time.'
+    case 'press':
+      return kind === 'banner' || kind === 'sticker'
+        ? `Your ${what} ${kind === 'sticker' ? 'are' : 'is'} printing on our large-format printer. Big jobs print in passes, so it takes a little while.`
+        : `Your ${what} ${kind === 'cards' ? 'are' : 'are'} printing now.`
+    case 'finishing': {
+      const base = kind === 'banner' ? ['trimming'] : kind === 'sticker' ? [] : kind === 'cards' ? ['cutting'] : []
+      const all = [...base, ...finishing]
+      return all.length
+        ? `Now the finishing: ${all.join(', ')}. Then a final check against your order.`
+        : 'A final check against your order before it’s packed.'
+    }
+    case 'ready':
+      return `Checked and packed. Bring your order number to ${branch}.`
+    case 'collected':
+      return 'Handed over. Thank you for printing with us.'
+    default:
+      return ''
+  }
+}
+
+// One line about a step still to come.
+function preview(key, order, lines) {
+  const finishing = finishingWords(lines)
+  switch (key) {
+    case 'inspecting': return 'We check your file before anything is printed'
+    case 'press': return 'Your job goes on the printer'
+    case 'finishing': return finishing.length ? `${finishing.join(', ')} and a final check` : 'A final check against your order'
+    case 'ready': return 'We’ll tell you the moment it’s packed'
+    case 'collected': return `Handed over at ${order.branch?.name?.replace(' Branch', '') || 'Westland'}`
+    default: return ''
+  }
+}
+
+function Progress({ order, stage }) {
+  const lines = order.line_items || []
+  const reached = APP_STEPS.findIndex(s => s.key === stage)
+  const times = order.stage_times || {}
+  const finished = stage === 'ready' || stage === 'collected'
+
+  return (
+    <AppCard title="Progress">
+      <ol className="px-4 pt-3.5 pb-4">
+        {APP_STEPS.map((s, i) => {
+          const isDone = i < reached || (i === reached && stage === 'collected')
+          const isNow = i === reached && stage !== 'collected'
+          const last = i === APP_STEPS.length - 1
+          const est = isNow ? estimateFor(order, s.key) : null
+          const fact = s.key === 'paid' ? paymentLabel(order).toLowerCase()
+            : s.key === 'inspecting' && isDone ? 'passed' : null
+          return (
+            <li key={s.key} className="relative flex gap-3 pb-4 last:pb-0">
+              {!last && (
+                <span className={`absolute left-[17px] top-10 bottom-0.5 w-0.5
+                                  ${i < reached ? 'bg-farhat' : 'bg-[#ece9e3]'}`} />
+              )}
+              <span className={`relative z-[1] w-9 h-9 rounded-full grid place-items-center shrink-0
+                ${isDone ? 'bg-farhat text-white'
+                  : isNow ? (finished ? 'bg-emerald-600 text-white ring-[5px] ring-emerald-600/15'
+                                      : 'bg-white text-farhat border-2 border-farhat ring-[5px] ring-farhat/12')
+                  : 'bg-[#f3f1ec] text-[#b9b4ab]'}`}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                     strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]" aria-hidden="true">
+                  {STEP_ICON[s.key]}
+                </svg>
+              </span>
+              <div className="flex-1 min-w-0 pt-0.5">
+                <p className={`text-sm leading-tight ${isNow || isDone ? 'font-bold' : 'font-semibold text-[#a8a29e]'}`}>
+                  {s.label}
+                  {est && (
+                    <span className={`ml-1.5 align-[1px] inline-block px-2 py-0.5 rounded-full text-[0.65rem] font-bold
+                                      ${est.held_up || est.running_over ? 'bg-amber-50 text-amber-800' : 'bg-[#fdeccf] text-[#8a5a00]'}`}>
+                      {estimateText(est)}
+                    </span>
+                  )}
+                </p>
+                {(isDone || isNow) && (times[s.key] || fact) && (
+                  <p className="mt-0.5 text-xs text-body">
+                    {[times[s.key] && (isNow && !finished ? `Started ${timeLabel(times[s.key])}` : timeLabel(times[s.key])), fact]
+                      .filter(Boolean).join(' · ')}
+                  </p>
+                )}
+                {isNow && (
+                  <p className={`mt-2 text-[0.78rem] leading-relaxed rounded-xl px-3 py-2.5
+                                 ${finished ? 'bg-emerald-50 text-emerald-900/80' : 'bg-[#fdf6f6] text-ink/70'}`}>
+                    {explain(s.key, order, lines)}
+                  </p>
+                )}
+                {!isDone && !isNow && (
+                  <p className="mt-0.5 text-xs text-body/70">{preview(s.key, order, lines)}</p>
+                )}
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+    </AppCard>
+  )
+}
+
+function appStage(order) {
+  return order.handover_state === 'HANDED_OVER' ? 'collected' : stageOf(order)
+}
+
+function lineDetail(line) {
+  const spec = line.specifications || {}
+  const q = Number(line.quantity) || 1
+  if (spec.width_in && spec.height_in) {
+    const size = i => (Number(i) % 12 === 0 ? `${Number(i) / 12}ft` : `${i}in`)
+    return `${size(spec.width_in)} × ${size(spec.height_in)}${q > 1 ? ` · ${q} pieces` : ''}`
+  }
+  if (/card/i.test(line.base_name || line.service_name || '')) return `${q} box${q === 1 ? '' : 'es'}`
+  return `${q} cop${q === 1 ? 'y' : 'ies'}`
+}
+
+function AppCard({ title, children, className = '' }) {
+  return (
+    <section className={`mt-4 rounded-2xl border border-[#ece9e3] bg-white ${className}`}>
+      {title && <h2 className="px-4 pt-3.5 text-sm font-bold">{title}</h2>}
+      {children}
+    </section>
+  )
+}
+
+function AppTrack({ order }) {
+  const [copied, setCopied] = useState(false)
+  const stage = appStage(order)
+  const reached = APP_STEPS.findIndex(s => s.key === stage)
+  const times = order.stage_times || {}
+  const lines = order.line_items || []
+  const branch = order.branch
+  const phone = branch?.phone || '0556244194'
+  const done = stage === 'ready' || stage === 'collected'
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(order.order_number)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    } catch { /* the number is on screen to be read */ }
+  }
+
+  return (
+    <div className="min-h-screen bg-white text-ink">
+      <Header />
+      <main className="max-w-md mx-auto px-4 pb-10">
+
+        {/* The order, and where it stands. */}
+        <div className="rounded-2xl bg-farhat/5 border border-farhat/15 px-4 py-3.5">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-lg font-extrabold tabular-nums">{order.order_number}</p>
+            <button onClick={copy} aria-label="Copy the order number"
+                    className="w-9 h-9 grid place-items-center rounded-xl bg-white text-body">
+              {copied ? (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
+                     strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-emerald-700"><path d="M5 12.5l4.5 4.5L19 7" /></svg>
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+                     strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                  <rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" />
+                </svg>
+              )}
+            </button>
+          </div>
+          {order.paid_at && <p className="text-xs text-body">Paid {dateLabel(order.paid_at)}</p>}
+          <p className={`mt-2 text-sm font-bold ${done ? 'text-emerald-700' : 'text-farhat'}`}>
+            {stage === 'collected' ? 'Collected'
+              : stage === 'ready' ? 'Ready to collect'
+              : order.promised_for ? `Ready about ${readyLabel(order.promised_for)}` : 'We’re on it'}
+          </p>
+        </div>
+
+        {order.is_halted && (
+          <div className="mt-3 rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3">
+            <p className="text-sm font-semibold text-amber-800">Paused for the moment</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-amber-900/80">
+              Something needs sorting before we carry on. We’ll be in touch.
+            </p>
+          </div>
+        )}
+
+        {/* Where it has got to, and what each step means. */}
+        <Progress order={order} stage={stage} />
+
+        {/* What was ordered. */}
+        <AppCard title="Your order">
+          <div className="divide-y divide-[#f0ede8]">
+            {lines.map(line => {
+              const photo = serviceImage(line.base_name || line.service_name)
+              return (
+                <div key={line.id} className="flex gap-3 px-4 py-3">
+                  {photo ? (
+                    <img src={photo} alt="" className="w-14 h-14 rounded-xl object-cover shrink-0" />
+                  ) : (
+                    <span className="w-14 h-14 rounded-xl bg-[#fdecec] grid place-items-center shrink-0">
+                      <span className="scale-[1.3]"><ProductBadge name={line.base_name || line.service_name} onLight /></span>
+                    </span>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between gap-2">
+                      <p className="text-sm font-bold leading-snug">{line.service_name}</p>
+                      <p className="text-sm font-bold tabular-nums shrink-0">GHS {line.total}</p>
+                    </div>
+                    <p className="text-xs text-body">{lineDetail(line)}</p>
+                    {(line.addons || []).map((a, i) => (
+                      <p key={i} className="text-[0.7rem] text-body">
+                        + {a.service_name}{a.detail ? ` (${a.detail})` : ''} × {a.quantity}
+                      </p>
+                    ))}
+                    {line.artwork_filename && (
+                      <p className="mt-1 flex items-center gap-1 text-[0.7rem] font-semibold text-emerald-700 truncate">
+                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3 shrink-0" aria-hidden="true">
+                          <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm5 7.2l-6.1 6.9a1 1 0 0 1-1.5 0L6 12.6a1 1 0 0 1 1.5-1.3l2.6 2.9 5.4-6.1A1 1 0 0 1 17 9.2z" />
+                        </svg>
+                        <span className="truncate">{line.artwork_filename}</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="mx-4 py-3 border-t border-dashed border-[#e5e2dc] space-y-1">
+            {Number(order.discount_amount) > 0 && (
+              <div className="flex justify-between text-xs text-emerald-700">
+                <span>{order.discount_reason}</span><span>− GHS {order.discount_amount}</span>
+              </div>
+            )}
+            <div className="flex justify-between items-baseline">
+              <span className="text-xs text-body">{paymentLabel(order)}</span>
+              <span className="text-base font-extrabold tabular-nums">Paid GHS {order.total}</span>
+            </div>
+          </div>
+        </AppCard>
+
+        {/* Where to collect. */}
+        <AppCard title="Collect at">
+          <div className="px-4 pt-1.5 pb-4">
+            <p className="text-sm font-semibold">{branch?.name || 'Westland Branch'}</p>
+            {branch?.address && <p className="text-xs text-body mt-0.5">{branch.address}</p>}
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <a href={directionsHref(branch)} target="_blank" rel="noreferrer"
+                 className={`py-2.5 rounded-xl text-center text-sm font-bold
+                             ${stage === 'ready' ? 'bg-farhat text-white' : 'border border-[#e3e0da] text-ink'}`}>
+                Directions
+              </a>
+              <a href={`tel:${phone}`}
+                 className="py-2.5 rounded-xl text-center text-sm font-bold border border-[#e3e0da] text-ink">
+                Call the branch
+              </a>
+            </div>
+            {branch && <div className="mt-3 rounded-xl overflow-hidden"><CollectionMap branch={branch} /></div>}
+          </div>
+        </AppCard>
+
+        <p className="mt-5 text-center text-xs text-body">
+          {stage === 'collected' ? 'Thank you for printing with us.'
+            : 'We’ll tell you the moment it’s ready to collect.'}
+        </p>
+      </main>
     </div>
   )
 }
