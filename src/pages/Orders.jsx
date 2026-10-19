@@ -17,7 +17,7 @@ export default function Orders() {
       <Header />
       <main className="max-w-md mx-auto px-4 pb-6">
         {!ready ? null : account ? (
-          <MyOrders />
+             <MyOrders heading={false} />
         ) : (
           <div className="py-16 text-center">
             <p className="text-lg font-bold">Your orders, all in one place</p>

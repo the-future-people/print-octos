@@ -50,13 +50,13 @@ function AppBar({ title, back }) {
   const navigate = useNavigate()
   return (
     <header
-      className="sticky top-0 z-20 bg-white border-b border-rule"
+      className="sticky top-0 z-20 bg-farhat text-white shadow-[0_1px_0_rgba(0,0,0,0.08)]"
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
     >
       <div className="max-w-md mx-auto h-14 px-2 grid grid-cols-[48px_1fr_48px] items-center">
         {back ? (
           <button onClick={() => navigate(-1)} aria-label="Back"
-                  className="w-11 h-11 grid place-items-center text-ink">
+                  className="w-11 h-11 grid place-items-center text-white">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
                  strokeLinecap="round" strokeLinejoin="round" className="w-[22px] h-[22px]"
                  aria-hidden="true">
