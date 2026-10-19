@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { getCatalogue } from '../api/client'
+import { accountOrders, getCatalogue } from '../api/client'
 import { ServiceIcon } from '../lib/icons.jsx'
 import { serviceImage } from '../lib/images'
 import Header from '../components/Header.jsx'
+import { useAccount } from '../lib/AccountContext.jsx'
 
 /**
  * What a customer sees on opening.
@@ -44,6 +45,7 @@ const ordered = list => [
 
 export default function Landing() {
   const navigate = useNavigate()
+  const { inApp } = useAccount()
 
   const { data: services = [], isLoading, isError } = useQuery({
     queryKey: ['catalogue'],
@@ -135,7 +137,9 @@ export default function Landing() {
           </p>
         )}
 
-        {processed.length > 0 && (
+        {inApp && <AppHome services={services} navigate={navigate} />}
+
+        {!inApp && processed.length > 0 && (
           <Section
             title="Order ahead"
             note="Banners, stickers and cards: pick one to get started."
@@ -144,7 +148,7 @@ export default function Landing() {
           />
         )}
 
-        {documents.length > 0 && (
+        {!inApp && documents.length > 0 && (
           <Section
             title="Documents & flyers"
             note="Send your file and collect it printed, with lamination, binding or an envelope if you like."
@@ -275,5 +279,230 @@ function Tile({ service, onOpen }) {
         </div>
       </div>
     </button>
+  )
+}
+
+
+// ── The app's home, below the hero ───────────────────────────────
+
+// Westland's map, as on the More tab.
+const BRANCH_MAP = 'https://www.google.com/maps/search/?api=1&query=Farhat+Printing+Press+Westland+Accra'
+
+function priceLine(s) {
+  const price = s.price ? Number(s.price).toFixed(2) : null
+  const quantityUnit = (s.spec_template || []).find(f => f.key === 'quantity')?.unit
+  if (!price) return null
+  if (bySize(s.unit)) return `GHS ${price} per sq ft`
+  if (quantityUnit === 'boxes') return `GHS ${price} a box`
+  if (['sheet', 'PER_PAGE', 'PER_SHEET'].includes(s.unit)) return `From GHS ${price} a sheet`
+  return `From GHS ${price}`
+}
+
+/**
+ * Home in the app: one card that means something right now, then the
+ * products as shelves. Nothing here repeats a tab.
+ */
+function AppHome({ services, navigate }) {
+  const ready = services.filter(s => s.available !== false)
+  const ahead = ready.filter(s => s.category === 'PRODUCTION')
+  const documents = ready.filter(s => s.category !== 'PRODUCTION')
+
+  return (
+    <>
+      <NowCard navigate={navigate} />
+      {ahead.length > 0 && <Shelf title="Order ahead" services={ahead} navigate={navigate} />}
+      {documents.length > 0 && <Shelf title="Documents & flyers" services={documents} navigate={navigate} />}
+    </>
+  )
+}
+
+// How far along each stage is, for the bar on the card.
+const PROGRESS = { paid: 10, inspecting: 25, press: 55, finishing: 80 }
+const STAGE_LABEL = {
+  paid: 'Paid', inspecting: 'Being checked', press: 'In press', finishing: 'Finishing',
+}
+
+function timeLeft(e) {
+  if (!e) return null
+  if (e.held_up) return 'A short delay, we’re on it'
+  if (e.running_over) return 'Taking a little longer than usual'
+  const m = Number(e.minutes_left) || 0
+  if (m < 60) return `About ${m} min left`
+  const h = Math.floor(m / 60)
+  return `About ${h} hr${m % 60 ? ` ${m % 60} min` : ''} left`
+}
+
+/**
+ * The one card under the hero, depending on who is looking:
+ * an order in progress or ready; signed out, an invitation; never
+ * ordered, how it works; everything collected, nothing at all.
+ */
+function NowCard({ navigate }) {
+  const { account, ready: accountReady } = useAccount()
+  const { data, isLoading } = useQuery({
+    queryKey: ['my-orders'],
+    queryFn: () => accountOrders().then(r => r.data),
+    enabled: !!account,
+    refetchInterval: 60_000,
+  })
+
+  if (!accountReady) return null
+
+  if (!account) {
+    return (
+      <button onClick={() => navigate('/account')}
+              className="mt-5 w-full flex items-center gap-3 p-3.5 rounded-2xl border border-rule
+                         bg-white text-left active:bg-substrate">
+        <span className="relative w-10 h-10 rounded-full bg-farhat/10 text-farhat grid
+                         place-items-center shrink-0 ring-2 ring-gold">
+          <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5" aria-hidden="true">
+            <circle cx="12" cy="8" r="4.2" /><path d="M3.8 20.5a8.2 8.2 0 0 1 16.4 0z" />
+          </svg>
+          <span className="absolute -top-[2px] -left-[2px] w-[9px] h-[9px] rounded-full bg-gold
+                           border-[1.5px] border-white" />
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-sm font-bold">Your orders, all in one place</span>
+          <span className="block text-xs text-body mt-0.5">Sign in with your number to track them.</span>
+        </span>
+        <span className="shrink-0 px-3 py-1.5 rounded-full bg-farhat text-white text-xs font-bold">
+          Sign in
+        </span>
+      </button>
+    )
+  }
+
+  if (isLoading || !data) return null
+  const { active = [], collected = [] } = data
+
+  if (active.length > 0) {
+    // A ready order matters most: it is waiting for them.
+    const order = active.find(o => o.stage === 'ready') || active[0]
+    const more = active.length - 1
+    const open = () => navigate(`/track/${order.order_number}?t=${order.token}`)
+
+    if (order.stage === 'ready') {
+      return (
+        <div className="mt-5 p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/60">
+          <button onClick={open} className="w-full text-left">
+            <span className="flex items-center justify-between">
+              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[0.7rem] font-bold">
+                Ready to collect
+              </span>
+              <span className="text-[0.7rem] text-body">{order.order_number}</span>
+            </span>
+            <span className="block mt-2 text-sm font-bold">Your {order.summary} is ready</span>
+            <span className="block text-xs text-body mt-0.5">
+              Collect at {order.branch || 'Westland Branch'}
+            </span>
+          </button>
+          <button onClick={() => window.open(BRANCH_MAP, '_blank')}
+                  className="mt-3 w-full py-2.5 rounded-xl bg-farhat text-white text-sm font-bold">
+            Directions
+          </button>
+          {more > 0 && (
+            <button onClick={() => navigate('/orders')} className="mt-2 w-full text-xs font-semibold text-body">
+              and {more} more order{more === 1 ? '' : 's'}
+            </button>
+          )}
+        </div>
+      )
+    }
+
+    return (
+      <div className="mt-5 p-3.5 rounded-2xl border border-amber-200 bg-amber-50/60">
+        <button onClick={open} className="w-full text-left">
+          <span className="flex items-center justify-between">
+            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[0.7rem] font-bold">
+              {STAGE_LABEL[order.stage] || 'In progress'}
+            </span>
+            <span className="text-[0.7rem] text-body">{order.order_number}</span>
+          </span>
+          <span className="mt-2 flex items-center justify-between gap-2">
+            <span className="min-w-0">
+              <span className="block text-sm font-bold truncate">Your {order.summary}</span>
+              <span className="block text-xs text-body mt-0.5">
+                {timeLeft(order.estimate) || 'We’re on it'}
+                {order.branch ? ` · ${order.branch.replace(' Branch', '')}` : ''}
+              </span>
+            </span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                 strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 shrink-0 text-body"
+                 aria-hidden="true">
+              <path d="M9 6l6 6-6 6" />
+            </svg>
+          </span>
+          <span className="block mt-2.5 h-1.5 rounded-full bg-amber-100 overflow-hidden">
+            <span className="block h-full rounded-full bg-farhat"
+                  style={{ width: `${PROGRESS[order.stage] || 10}%` }} />
+          </span>
+        </button>
+        {more > 0 && (
+          <button onClick={() => navigate('/orders')} className="mt-2 w-full text-xs font-semibold text-body">
+            and {more} more order{more === 1 ? '' : 's'}
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  if (collected.length === 0) {
+    const steps = [['1', 'Choose & upload', 'your file'], ['2', 'Pay with', 'mobile money'], ['3', 'Collect at', 'Westland']]
+    return (
+      <div className="mt-5 p-3.5 rounded-2xl border border-rule bg-white">
+        <p className="text-sm font-bold">How it works</p>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {steps.map(([n, a, b]) => (
+            <div key={n} className="text-center">
+              <span className="mx-auto w-7 h-7 rounded-full bg-farhat text-white text-xs font-extrabold
+                               grid place-items-center">{n}</span>
+              <p className="mt-1.5 text-[0.7rem] font-bold leading-tight">{a}</p>
+              <p className="text-[0.7rem] text-body leading-tight">{b}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // A returning customer with nothing on order: the shelves come straight up.
+  return null
+}
+
+function Shelf({ title, services, navigate }) {
+  return (
+    <section className="mt-7">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-lg font-bold">{title}</h2>
+        <button onClick={() => navigate('/categories')} className="text-sm font-semibold text-farhat">
+          See all
+        </button>
+      </div>
+      <div className="mt-3 -mx-5 px-5 flex gap-3 overflow-x-auto snap-x snap-mandatory pb-1
+                      [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {services.map(s => {
+          const photo = serviceImage(s.base_name || s.name)
+          return (
+            <button key={s.id} onClick={() => navigate(`/service/${s.id}`)}
+                    className="snap-start shrink-0 w-[150px] text-left rounded-2xl border border-rule
+                               bg-white overflow-hidden active:bg-substrate">
+              {photo ? (
+                <img src={photo} alt="" loading="lazy" className="w-full aspect-[4/3] object-cover" />
+              ) : (
+                <div className="w-full aspect-[4/3] bg-substrate grid place-items-center">
+                  <ServiceIcon name={s.name} className="w-7 h-7 text-body/60" />
+                </div>
+              )}
+              <div className="px-3 py-2.5">
+                <p className="text-sm font-semibold leading-snug line-clamp-2">{s.name}</p>
+                {priceLine(s) && (
+                  <p className="mt-1 text-xs font-semibold text-farhat">{priceLine(s)}</p>
+                )}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </section>
   )
 }
