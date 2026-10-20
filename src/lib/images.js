@@ -52,8 +52,26 @@ const BY_KEYWORD = [
   [['a4 colo', 'a4'], a4Colour],
 ]
 
+// The server's own photos, remembered when the catalogue loads, by the
+// names screens ask with (the product's and the service's own). They win
+// over the built-in ones, so a photo changed on the server shows
+// everywhere without an app update.
+const fromServer = new Map()
+
+export function rememberServerImages(services = []) {
+  for (const s of services) {
+    for (const v of [s, ...(s.variants || [])]) {
+      if (!v.image_url) continue
+      for (const key of [v.name, v.base_name, v.display_name]) {
+        if (key) fromServer.set(key.toLowerCase(), v.image_url)
+      }
+    }
+  }
+}
+
 export function serviceImage(name = '') {
   const n = name.toLowerCase()
+  if (fromServer.has(n)) return fromServer.get(n)
   for (const [keywords, image] of BY_KEYWORD) {
     if (keywords.some(k => n.includes(k))) return image
   }

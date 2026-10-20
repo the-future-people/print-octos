@@ -17,6 +17,9 @@ import LaunchSplash from './components/LaunchSplash.jsx'
 import TabBar from './components/TabBar.jsx'
 import { AccountProvider } from './lib/AccountContext.jsx'
 import { takePaying } from './lib/paying'
+import { useQuery } from '@tanstack/react-query'
+import { getCatalogue } from './api/client'
+import { rememberServerImages } from './lib/images'
 import Directions from './pages/Directions.jsx'
 
 
@@ -26,6 +29,19 @@ export default function App() {
   const [opening, setOpening] = useState(true)
   const opened = useCallback(() => setOpening(false), [])
   const navigate = useNavigate()
+
+  // The catalogue, once at the start, so every screen's photos come from
+  // the server: the same query the shop pages use, so it is shared.
+  const { data: catalogue } = useQuery({
+    queryKey: ['catalogue'],
+    queryFn: () => getCatalogue().then(r => r.data),
+  })
+  const [, setPhotosReady] = useState(0)
+  useEffect(() => {
+    if (!catalogue) return
+    rememberServerImages(catalogue)
+    setPhotosReady(n => n + 1)
+  }, [catalogue])
 
   // Back from Paystack. Either the website's return page hands over
   // through printoctos://paid, or the customer closes the panel
