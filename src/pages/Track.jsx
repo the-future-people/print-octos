@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { getOrder, findOrder } from '../api/client'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { getOrder, findOrder, accountOrders } from '../api/client'
 import { serviceImage } from '../lib/images'
 import Header from '../components/Header.jsx'
 import CollectionMap from '../components/CollectionMap.jsx'
@@ -57,10 +57,15 @@ function Record({ orderNumber, token }) {
     // being told to refresh.
     // Every 15 seconds while the order is moving, a minute once it waits
     // on the shelf or has gone: a safety net under the silent nudges.
+    // By moment, not by stage: a ready order is the one being collected
+    // right now, with the customer at the counter, so it is watched every
+    // few seconds; one being made, every 15; a collected one, not at all.
     refetchInterval: query => {
       const o = query.state.data
-      const settled = o && (o.handover_state === 'HANDED_OVER' || o.work_state === 'DONE')
-      return settled ? 60_000 : 15_000
+      if (!o) return 15_000
+      if (o.handover_state === 'HANDED_OVER') return false
+      if (o.work_state === 'DONE') return 3_000
+      return 15_000
     },
   })
 
@@ -819,6 +824,19 @@ function fileKind(name = '') {
 function OrderCard({ order, stage, onDirections }) {
   const [open, setOpen] = useState(() => new Set())
   const [copied, setCopied] = useState(false)
+  // Collected while they watch: a brief green tick, so the customer at
+  // the counter sees the handover land.
+  const [justCollected, setJustCollected] = useState(false)
+  const wasStage = useRef(stage)
+  useEffect(() => {
+    if (wasStage.current === 'ready' && stage === 'collected') {
+      setJustCollected(true)
+      const t = setTimeout(() => setJustCollected(false), 2500)
+      return () => clearTimeout(t)
+    }
+    wasStage.current = stage
+    return undefined
+  }, [stage])
   const lines = order.line_items || []
   const times = order.stage_times || {}
   const branch = order.branch?.name || 'Westland Branch'
@@ -854,7 +872,8 @@ function OrderCard({ order, stage, onDirections }) {
     <section className={`rounded-[20px] border bg-white overflow-hidden ${tone.card}`}>
       {/* Where it stands. */}
       <div className={`flex gap-3 px-3.5 pt-3.5 pb-4 ${tone.head}`}>
-        <span className={`w-11 h-11 rounded-full grid place-items-center shrink-0 text-white ring-[6px] ring-white/60 ${tone.icon}`}>
+        <span className={`w-11 h-11 rounded-full grid place-items-center shrink-0 text-white ring-[6px] ring-white/60 ${tone.icon}
+                          ${justCollected ? '!bg-green-600 scale-110 transition-transform duration-500' : 'transition-transform duration-500'}`}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
                strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5" aria-hidden="true">
             {mood === 'making' ? STEP_ICON[stage] : <path d="M5 12.5l4.5 4.5L19 7" />}
@@ -1025,13 +1044,47 @@ function AppTrack({ order }) {
   const stage = appStage(order)
   const navigate = useNavigate()
   const openDirections = () => navigate('/directions', { state: { branch: order.branch } })
+
+  // Collected while they watch: count down 10 seconds, with a way to
+  // stay, then fold the order away and move on: to their other orders if
+  // any are still active, otherwise to the catalogue to print something
+  // new. Opening an already-collected order later never does this.
+  const queryClient = useQueryClient()
+  const [countdown, setCountdown] = useState(null)
+  const [folding, setFolding] = useState(false)
+  const lastStage = useRef(stage)
+  useEffect(() => {
+    if (lastStage.current === 'ready' && stage === 'collected') setCountdown(10)
+    lastStage.current = stage
+  }, [stage])
+  useEffect(() => {
+    if (countdown == null) return undefined
+    if (countdown > 0) {
+      const t = setTimeout(() => setCountdown(c => (c == null ? c : c - 1)), 1000)
+      return () => clearTimeout(t)
+    }
+    setFolding(true)
+    const t = setTimeout(async () => {
+      let next = '/categories'
+      try {
+        const mine = await queryClient.fetchQuery({
+          queryKey: ['my-orders'],
+          queryFn: () => accountOrders().then(r => r.data),
+        })
+        if ((mine.active || []).length) next = '/orders'
+      } catch { /* the catalogue is never a wrong place to land */ }
+      navigate(next, { replace: true })
+    }, 500)
+    return () => clearTimeout(t)
+  }, [countdown, navigate, queryClient])
   const branch = order.branch
   const phone = branch?.phone || '0556244194'
 
   return (
     <div className="min-h-screen bg-white text-ink">
       <Header />
-      <main className="max-w-md mx-auto px-4 pb-10">
+      <main className={`max-w-md mx-auto px-4 pb-10 origin-top transition-all duration-500 ease-in
+                        ${folding ? 'scale-y-0 opacity-0' : ''}`}>
         <OrderCard order={order} stage={stage} onDirections={order.branch ? openDirections : null} />
 
         {order.is_halted && (
@@ -1063,6 +1116,23 @@ function AppTrack({ order }) {
             : 'We’ll tell you the moment it’s ready to collect.'}
         </p>
       </main>
+
+      {countdown != null && !folding && (
+        <div className="fixed inset-x-0 bottom-0 z-30 px-4"
+             style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}>
+          <div className="max-w-md mx-auto flex items-center gap-3 rounded-2xl bg-[#0d5c33] text-white
+                          px-4 py-3 shadow-lg">
+            <span className="w-8 h-8 rounded-full bg-white/15 grid place-items-center font-black">✓</span>
+            <p className="flex-1 text-sm">
+              <b>All done!</b> Taking you on in <b className="tabular-nums">{countdown}</b>…
+            </p>
+            <button onClick={() => setCountdown(null)}
+                    className="px-3 py-1.5 rounded-lg bg-white text-[#0d5c33] text-xs font-bold">
+              Stay here
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
