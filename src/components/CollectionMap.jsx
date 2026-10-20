@@ -21,7 +21,7 @@ import { useEffect, useState } from 'react'
 // are fine at the volume one print shop generates.
 const TILE = 'https://tile.openstreetmap.org'
 
-export default function CollectionMap({ branch }) {
+export default function CollectionMap({ branch, onOpen }) {
   const [me, setMe] = useState(null)
   const [asking, setAsking] = useState(false)
   const [refused, setRefused] = useState(false)
@@ -64,7 +64,12 @@ export default function CollectionMap({ branch }) {
     <div className="rounded-xl border border-rule overflow-hidden">
 
       {located && (
-        <div className="relative h-[150px] bg-substrate">
+        <div className={`relative h-[150px] bg-substrate ${onOpen ? 'cursor-pointer' : ''}`}
+             onClick={onOpen || undefined}>
+          {onOpen && (
+            <span className="absolute right-2.5 bottom-2.5 z-[1] px-2.5 py-1 rounded-full bg-white/95
+                             text-[0.7rem] font-bold">Tap to open ⤢</span>
+          )}
           <img
             src={staticMap(lat, lon)}
             alt={`Map showing ${branch.name}`}
@@ -119,6 +124,7 @@ export default function CollectionMap({ branch }) {
         <div className="mt-3 flex gap-2">
           <a
             href={directionsTo(branch, lat, lon, located)}
+            onClick={e => { if (onOpen) { e.preventDefault(); onOpen() } }}
             target="_blank"
             rel="noreferrer"
             className="flex-1 inline-flex items-center justify-center gap-1.5

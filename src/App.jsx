@@ -17,6 +17,8 @@ import LaunchSplash from './components/LaunchSplash.jsx'
 import TabBar from './components/TabBar.jsx'
 import { AccountProvider } from './lib/AccountContext.jsx'
 import { takePaying } from './lib/paying'
+import Directions from './pages/Directions.jsx'
+
 
 export default function App() {
   // The opening animation, on top of the app while it loads. Only in the
@@ -72,6 +74,7 @@ export default function App() {
         <Route path="/paid" element={<Paid />} />
         {/* The link in the text message, traded for the real token. */}
         <Route path="/t/:code" element={<ShortLink />} />
+        <Route path="/directions" element={<Directions />} />
       </Routes>
       <TabBar />
       <PushBridge />

@@ -809,7 +809,7 @@ function fileKind(name = '') {
  * headline, its number and when it was paid (with how), and what was
  * ordered, each item folding open to its lines, finishing and file.
  */
-function OrderCard({ order, stage }) {
+function OrderCard({ order, stage, onDirections }) {
   const [open, setOpen] = useState(() => new Set())
   const [copied, setCopied] = useState(false)
   const lines = order.line_items || []
@@ -858,6 +858,7 @@ function OrderCard({ order, stage }) {
           <p className={`mt-0.5 text-xs ${tone.sub}`}>{sub}</p>
           {when && <p className={`text-xs ${tone.sub} opacity-80`}>{when}</p>}
           <a href={directionsHref(order.branch)} target="_blank" rel="noreferrer"
+             onClick={e => { if (onDirections) { e.preventDefault(); onDirections() } }}
              className={`mt-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border text-[0.7rem] font-bold ${tone.chip}`}>
             <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3" aria-hidden="true">
               <path d="M12 2a7 7 0 0 0-7 7c0 5.3 7 13 7 13s7-7.7 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" />
@@ -994,6 +995,8 @@ function Receipt({ icon, title, note, price }) {
 
 function AppTrack({ order }) {
   const stage = appStage(order)
+  const navigate = useNavigate()
+  const openDirections = () => navigate('/directions', { state: { branch: order.branch } })
   const branch = order.branch
   const phone = branch?.phone || '0556244194'
 
@@ -1001,7 +1004,7 @@ function AppTrack({ order }) {
     <div className="min-h-screen bg-white text-ink">
       <Header />
       <main className="max-w-md mx-auto px-4 pb-10">
-        <OrderCard order={order} stage={stage} />
+        <OrderCard order={order} stage={stage} onDirections={order.branch ? openDirections : null} />
 
         {order.is_halted && (
           <div className="mt-3 rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3">
@@ -1016,22 +1019,14 @@ function AppTrack({ order }) {
         <Progress order={order} stage={stage} />
 
         {/* Where to collect. */}
+                {/* Where to collect: one map, one Directions, one Call. */}
         <AppCard title="Collect at">
-          <div className="px-4 pt-1.5 pb-4">
-            <p className="text-sm font-semibold">{branch?.name || 'Westland Branch'}</p>
-            {branch?.address && <p className="text-xs text-body mt-0.5">{branch.address}</p>}
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <a href={directionsHref(branch)} target="_blank" rel="noreferrer"
-                 className={`py-2.5 rounded-xl text-center text-sm font-bold
-                             ${stage === 'ready' ? 'bg-farhat text-white' : 'border border-[#e3e0da] text-ink'}`}>
-                Directions
-              </a>
-              <a href={`tel:${phone}`}
-                 className="py-2.5 rounded-xl text-center text-sm font-bold border border-[#e3e0da] text-ink">
-                Call the branch
-              </a>
-            </div>
-            {branch && <div className="mt-3 rounded-xl overflow-hidden"><CollectionMap branch={branch} /></div>}
+          <div className="px-3 pt-2 pb-3">
+            {order.branch ? (
+              <CollectionMap branch={order.branch} onOpen={openDirections} />
+            ) : (
+              <p className="px-1 text-sm text-body">Westland Branch, 53 Westland Avenue, Accra</p>
+            )}
           </div>
         </AppCard>
 
