@@ -6,6 +6,7 @@ import { serviceImage } from '../lib/images'
 import Header from '../components/Header.jsx'
 import CollectionMap from '../components/CollectionMap.jsx'
 import ProductBadge from '../components/ProductBadge.jsx'
+import QRCode from 'react-qr-code'
 import { useAccount } from '../lib/AccountContext.jsx'
 
 /**
@@ -874,6 +875,27 @@ function OrderCard({ order, stage, onDirections }) {
           </a>
         </div>
       </div>
+
+      {/* The collection pass: the QR and the PIN, only while it waits to
+          be collected. The attendant scans the QR, or takes the phone
+          number and the PIN. Never shown anywhere public. */}
+      {mood === 'ready' && order.collection_pin && (
+        <div className="mx-3 mt-3 rounded-2xl border border-[#c9ecd6] bg-white overflow-hidden">
+          <p className="pt-3 text-center text-xs font-bold text-green-800">Show this at the counter</p>
+          <div className="mt-2 mx-auto w-[150px] h-[150px] p-2 bg-white">
+            <QRCode value={`PO:${order.order_number}:${order.collection_pin}`}
+                    size={134} style={{ width: '100%', height: '100%' }} />
+          </div>
+          <p className="mt-1 text-center text-[0.7rem] text-body">or give your phone number and this PIN</p>
+          <div className="mt-1.5 flex justify-center gap-1.5">
+            {order.collection_pin.split('').map((d, i) => (
+              <span key={i} className="w-9 h-11 rounded-xl bg-[#ecf9f1] border border-[#cfe9d9] grid place-items-center
+                                       text-xl font-black text-[#0d5c33] tabular-nums">{d}</span>
+            ))}
+          </div>
+          <p className="py-3 text-center text-[0.68rem] text-body">Sending someone? Share the PIN with them.</p>
+        </div>
+      )}
 
       {/* Which order, and when it was paid. */}
       <div className="grid grid-cols-2 px-3.5 pt-3.5">
