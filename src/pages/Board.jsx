@@ -166,7 +166,10 @@ export default function Board() {
         {/* Being made */}
         <section className="bg-[#1b1b1b] rounded-[0.8vw] overflow-hidden flex flex-col min-h-0">
           <div className="flex items-center gap-[0.8vw] px-[1.2vw] py-[1vh] bg-[#fbbf24] text-[#111]">
-            <span className="text-[1.9vw]">⚙</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"
+                 strokeLinejoin="round" className="w-[2vw] h-[2vw]" aria-hidden="true">
+              <path d="M7 9V3h10v6" /><rect x="3" y="9" width="18" height="8" rx="2" /><path d="M7 14h10v7H7z" />
+            </svg>
             <span className="flex-1 text-[2vw] font-black tracking-wide">BEING MADE</span>
             <span className="text-right leading-none">
               <b className="block text-[2.4vw] font-black">{making.length}</b>
@@ -191,7 +194,10 @@ export default function Board() {
         {/* Ready to collect */}
         <section className="bg-[#1b1b1b] rounded-[0.8vw] overflow-hidden flex flex-col min-h-0">
           <div className="flex items-center gap-[0.8vw] px-[1.2vw] py-[1vh] bg-[#16a34a]">
-            <span className="text-[1.9vw]">🛍</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"
+                 strokeLinejoin="round" className="w-[2vw] h-[2vw]" aria-hidden="true">
+              <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /><path d="M4 7.5l8 4.5 8-4.5M12 12v9" />
+            </svg>
             <span className="flex-1 text-[2vw] font-black tracking-wide">READY TO COLLECT</span>
             <span className="text-right leading-none">
               <b className="block text-[2.4vw] font-black">{ready.length}</b>
