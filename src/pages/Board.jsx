@@ -1,37 +1,80 @@
 // src/pages/Board.jsx
 //
-// The waiting-area board, for a TV in the shop.
+// The waiting-area board, for a TV in the shop: an airport-style screen.
 //
 // Opened once at /board/WLB?key=… on any screen with a browser; from then
-// on it looks after itself: it asks every 5 seconds, shows what is being
-// made and what is ready, and when a number turns ready it lights up and
-// chimes. Short numbers only — no names, no phones, no PINs.
+// on it looks after itself. It asks every 5 seconds; shows what is being
+// made (with when it will be ready and where it is on the floor) and,
+// wider, what is ready to collect (and since when). A newly ready order
+// flashes green with a chime. When a side has more than fits, it pages,
+// every 8 seconds, and says so. Full order numbers with the last digits
+// lit, the service, never a name, phone or PIN.
 //
-// Browsers do not let a page make sound until someone has touched it, so
-// it opens on a "Start" screen: one tap switches on the sound and goes
-// full screen, and nobody needs to touch it again.
+// Browsers only allow sound after a tap, so it opens on a Start screen:
+// one tap for full screen and the chime, and nobody touches it again.
 
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import client from '../api/client'
 
-const clock = d => d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
+const ROWS = 6
+const time = iso => new Date(iso).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
 
 function chime(ctx) {
   if (!ctx) return
-  const now = ctx.currentTime
+  const t = ctx.currentTime
   ;[[880, 0], [1320, 0.18]].forEach(([freq, at]) => {
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
     osc.type = 'sine'
     osc.frequency.value = freq
-    gain.gain.setValueAtTime(0.0001, now + at)
-    gain.gain.exponentialRampToValueAtTime(0.25, now + at + 0.02)
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + at + 0.6)
+    gain.gain.setValueAtTime(0.0001, t + at)
+    gain.gain.exponentialRampToValueAtTime(0.25, t + at + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.6)
     osc.connect(gain).connect(ctx.destination)
-    osc.start(now + at)
-    osc.stop(now + at + 0.65)
+    osc.start(t + at)
+    osc.stop(t + at + 0.65)
   })
+}
+
+// The full number, the part that tells orders apart lit up.
+function Num({ n, ready }) {
+  const cut = Math.max(0, n.length - 3)
+  return (
+    <span className="font-extrabold tracking-wide text-[#d9d9d9] text-[1.45vw] whitespace-nowrap">
+      {n.slice(0, cut)}
+      <em className={`not-italic font-black ${ready ? 'text-[#4ade80] text-[2vw]' : 'text-[#fbbf24] text-[1.75vw]'}`}>
+        {n.slice(cut)}
+      </em>
+    </span>
+  )
+}
+
+// Pages through a list that does not fit, every 8 seconds.
+function usePages(list) {
+  const [page, setPage] = useState(0)
+  const pages = Math.max(1, Math.ceil(list.length / ROWS))
+  useEffect(() => {
+    if (pages < 2) { setPage(0); return undefined }
+    const t = setInterval(() => setPage(p => (p + 1) % pages), 8000)
+    return () => clearInterval(t)
+  }, [pages])
+  const at = Math.min(page, pages - 1)
+  return { rows: list.slice(at * ROWS, at * ROWS + ROWS), page: at, pages }
+}
+
+function Pager({ page, pages, colour }) {
+  return (
+    <div className="mt-auto flex items-center justify-between px-[1.2vw] py-[0.8vh] text-[0.95vw] text-[#8a8a8a]">
+      <span>{pages > 1 ? `Page ${page + 1} of ${pages}` : 'All shown'}</span>
+      <span className="flex gap-[0.4vw]">
+        {Array.from({ length: pages }, (_, i) => (
+          <i key={i} className="w-[0.55vw] h-[0.55vw] rounded-full"
+             style={{ background: i === page ? colour : '#444' }} />
+        ))}
+      </span>
+    </div>
+  )
 }
 
 export default function Board() {
@@ -40,6 +83,7 @@ export default function Board() {
   const key = params.get('key') || ''
 
   const [data, setData] = useState(null)
+  const [live, setLive] = useState(true)
   const [problem, setProblem] = useState('')
   const [started, setStarted] = useState(false)
   const [now, setNow] = useState(new Date())
@@ -47,15 +91,13 @@ export default function Board() {
   const seen = useRef(null)
   const audio = useRef(null)
 
-  // Ask every 5 seconds; keep the last good board if one request fails.
   useEffect(() => {
-    let live = true
+    let alive = true
     const ask = () => client.get(`/api/v1/storefront/board/${branch}/`, { params: { key } })
       .then(({ data: d }) => {
-        if (!live) return
-        setData(d)
-        setProblem('')
-        const readyNow = new Set(d.ready.map(r => r.n))
+        if (!alive) return
+        setData(d); setLive(true); setProblem('')
+        const readyNow = new Set(d.ready.map(r => r.number))
         if (seen.current) {
           const arrived = [...readyNow].filter(n => !seen.current.has(n))
           if (arrived.length) {
@@ -63,19 +105,24 @@ export default function Board() {
             setFresh(prev => new Set([...prev, ...arrived]))
             setTimeout(() => setFresh(prev => {
               const next = new Set(prev); arrived.forEach(n => next.delete(n)); return next
-            }), 12000)
+            }), 15000)
           }
         }
         seen.current = readyNow
       })
-      .catch(err => live && setProblem(err.response?.data?.detail || 'Reconnecting…'))
+      .catch(err => {
+        if (!alive) return
+        setLive(false)
+        setProblem(err.response?.data?.detail || '')
+      })
     ask()
     const t = setInterval(ask, 5000)
-    return () => { live = false; clearInterval(t) }
+    return () => { alive = false; clearInterval(t) }
   }, [branch, key])
 
+  // The clock ticks every second: a still clock on a TV means a stuck page.
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 15000)
+    const t = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(t)
   }, [])
 
@@ -89,64 +136,99 @@ export default function Board() {
   }
 
   const making = data?.making || []
-  const ready = data?.ready || []
+  // The newest ready ones first, and any just arrived at the very top.
+  const ready = [...(data?.ready || [])].sort((a, b) => (fresh.has(b.number) ? 1 : 0) - (fresh.has(a.number) ? 1 : 0))
+  const left = usePages(making)
+  const right = usePages(ready)
+
+  const hm = now.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
+    .replace(/\s?(am|pm)$/i, '')
+  const ampm = now.getHours() < 12 ? 'AM' : 'PM'
+  const ss = String(now.getSeconds()).padStart(2, '0')
+  const day = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase()
 
   return (
-    <div className="fixed inset-0 bg-white text-ink flex flex-col select-none cursor-default">
-      <header className="bg-farhat text-white flex items-center justify-between px-[3vw] py-[1.6vh]">
-        <p className="font-black text-[2.4vw] leading-none">Farhat Printing Press</p>
-        <p className="text-[1.5vw] opacity-90">Watch for your order number · {clock(now)}</p>
+    <div className="fixed inset-0 bg-[#121212] text-white flex flex-col select-none cursor-default">
+      <header className="flex items-center justify-between px-[2vw] py-[1vh]"
+              style={{ background: 'linear-gradient(180deg,#e31e24,#c4141a)' }}>
+        <p className="font-black text-[3.4vw] leading-none tracking-tight">Farhat Printing Press</p>
+        <div className="text-right border-l border-white/35 pl-[1.6vw]">
+          <p className="text-[0.95vw] tracking-[0.18em] opacity-90">{day}</p>
+          <p className="font-black leading-none tabular-nums">
+            <span className="text-[3.2vw]">{hm}</span>
+            <span className="text-[1.9vw] opacity-85">:{ss}</span>
+            <span className="text-[1.5vw] ml-[0.4vw]">{ampm}</span>
+          </p>
+        </div>
       </header>
 
-      <main className="flex-1 grid grid-cols-[1fr_1.25fr] min-h-0">
-        <section className="px-[3vw] py-[3vh] border-r border-[#f0ede8] min-h-0 overflow-hidden">
-          <h2 className="flex items-center gap-[0.8vw] text-[1.6vw] font-black tracking-wider text-amber-700">
-            <span className="w-[0.9vw] h-[0.9vw] rounded-full bg-amber-500" /> BEING MADE
-          </h2>
-          <ul className="mt-[2vh]">
-            {making.map(m => (
-              <li key={m.n} className="flex items-baseline justify-between py-[1.3vh] border-b border-[#f0ede8]">
-                <span className="text-[3.6vw] font-black tracking-wide tabular-nums leading-none">{m.n}</span>
-                <span className="text-[1.3vw] text-body">
-                  {m.ready_about ? `ready about ${clock(new Date(m.ready_about))}` : m.stage}
-                </span>
-              </li>
-            ))}
-            {making.length === 0 && <li className="py-[3vh] text-[1.4vw] text-body">Nothing in the queue.</li>}
-          </ul>
+      <main className="flex-1 min-h-0 grid grid-cols-[1fr_1.35fr] gap-[0.8vw] p-[0.8vw]">
+        {/* Being made */}
+        <section className="bg-[#1b1b1b] rounded-[0.8vw] overflow-hidden flex flex-col min-h-0">
+          <div className="flex items-center gap-[0.8vw] px-[1.2vw] py-[1vh] bg-[#fbbf24] text-[#111]">
+            <span className="text-[1.9vw]">⚙</span>
+            <span className="flex-1 text-[2vw] font-black tracking-wide">BEING MADE</span>
+            <span className="text-right leading-none">
+              <b className="block text-[2.4vw] font-black">{making.length}</b>
+              <small className="text-[0.8vw] tracking-widest">ORDERS</small>
+            </span>
+          </div>
+          <div className="grid grid-cols-[1.5fr_1.35fr_0.95fr_0.9fr] px-[1.2vw] py-[0.7vh] text-[0.85vw] tracking-widest text-[#9a9a9a] border-b border-[#2a2a2a]">
+            <span>ORDER</span><span>SERVICE</span><span>READY ABOUT</span><span>STAGE</span>
+          </div>
+          {left.rows.map(m => (
+            <div key={m.number} className="grid grid-cols-[1.5fr_1.35fr_0.95fr_0.9fr] items-center px-[1.2vw] py-[1.25vh] border-b border-[#262626] text-[1.25vw]">
+              <Num n={m.number} />
+              <span className="truncate pr-[0.6vw]">{m.service}</span>
+              <span className="tabular-nums">{m.ready_about ? time(m.ready_about) : '—'}</span>
+              <span className="justify-self-start text-[1vw] font-extrabold px-[0.8vw] py-[0.35vh] rounded-full bg-[#3b2a0b] text-[#fbbf24]">{m.stage}</span>
+            </div>
+          ))}
+          {making.length === 0 && <p className="px-[1.2vw] py-[3vh] text-[1.3vw] text-[#8a8a8a]">Nothing in the queue.</p>}
+          <Pager page={left.page} pages={left.pages} colour="#fbbf24" />
         </section>
 
-        <section className="px-[3vw] py-[3vh] bg-[#f6fbf8] min-h-0 overflow-hidden">
-          <h2 className="flex items-center gap-[0.8vw] text-[1.6vw] font-black tracking-wider text-green-700">
-            <span className="w-[0.9vw] h-[0.9vw] rounded-full bg-green-600" /> READY TO COLLECT
-          </h2>
-          <div className="mt-[2.5vh] grid grid-cols-4 gap-[1.2vw]">
-            {ready.map(r => (
-              <span key={r.n}
-                    className={`text-center rounded-[1.2vw] py-[2.2vh] text-[4vw] font-black tabular-nums leading-none
-                                border-[0.25vw] transition-all duration-700
-                                ${fresh.has(r.n)
-                                  ? 'bg-green-600 text-white border-green-600 scale-105 shadow-[0_0_0_0.6vw_rgba(22,163,74,0.25)]'
-                                  : 'bg-[#e8f7ee] text-[#0d5c33] border-[#b7e4c7]'}`}>
-                {r.n}
-              </span>
-            ))}
+        {/* Ready to collect */}
+        <section className="bg-[#1b1b1b] rounded-[0.8vw] overflow-hidden flex flex-col min-h-0">
+          <div className="flex items-center gap-[0.8vw] px-[1.2vw] py-[1vh] bg-[#16a34a]">
+            <span className="text-[1.9vw]">🛍</span>
+            <span className="flex-1 text-[2vw] font-black tracking-wide">READY TO COLLECT</span>
+            <span className="text-right leading-none">
+              <b className="block text-[2.4vw] font-black">{ready.length}</b>
+              <small className="text-[0.8vw] tracking-widest">ORDERS</small>
+            </span>
           </div>
-          {ready.length === 0 && <p className="mt-[3vh] text-[1.4vw] text-body">Nothing waiting yet.</p>}
-          <p className="mt-[3vh] text-[1.3vw] text-ink/70">
-            Bring your phone number and collection PIN to the counter.
-          </p>
+          <div className="grid grid-cols-[1.45fr_1.55fr_0.95fr] px-[1.2vw] py-[0.7vh] text-[0.85vw] tracking-widest text-[#9a9a9a] border-b border-[#2a2a2a]">
+            <span>ORDER</span><span>SERVICE</span><span>READY SINCE</span>
+          </div>
+          {right.rows.map(r => {
+            const isNew = fresh.has(r.number)
+            return (
+              <div key={r.number}
+                   className={`grid grid-cols-[1.45fr_1.55fr_0.95fr] items-center px-[1.2vw] py-[1.25vh] border-b border-[#262626]
+                               text-[1.35vw] transition-colors duration-700 ${isNew ? 'bg-[#15803d] animate-pulse' : ''}`}>
+                <span className={isNew ? '[&_*]:!text-white' : ''}><Num n={r.number} ready /></span>
+                <span className="truncate pr-[0.6vw]">{r.service}</span>
+                <span className="tabular-nums">{isNew ? 'just now ✦' : time(r.since)}</span>
+              </div>
+            )
+          })}
+          {ready.length === 0 && <p className="px-[1.2vw] py-[3vh] text-[1.3vw] text-[#8a8a8a]">Nothing waiting yet.</p>}
+          <Pager page={right.page} pages={right.pages} colour="#4ade80" />
         </section>
       </main>
 
-      {problem && (
-        <p className="absolute bottom-[1.5vh] left-1/2 -translate-x-1/2 px-[1.2vw] py-[0.6vh] rounded-full
-                      bg-ink/80 text-white text-[1vw]">{problem}</p>
-      )}
+      <footer className="flex items-center gap-[1vw] bg-[#0d0d0d] px-[1.6vw] py-[1vh] text-[1.3vw]">
+        <span className="w-[2vw] h-[2vw] rounded-full bg-[#e31e24] grid place-items-center font-black text-[1.2vw] shrink-0">!</span>
+        <span>Please have your <b>phone number</b> and <b>collection PIN</b> ready at the counter.</span>
+        <span className="ml-auto flex items-center gap-[0.6vw] text-[1vw] text-[#bbb]">
+          <i className={`w-[0.8vw] h-[0.8vw] rounded-full ${live ? 'bg-[#22c55e]' : 'bg-[#f59e0b]'}`} />
+          {live ? 'Live updates connected' : (problem || 'Reconnecting…')}
+        </span>
+      </footer>
 
       {!started && (
-        <button onClick={start}
-                className="absolute inset-0 bg-ink/85 text-white grid place-items-center text-center">
+        <button onClick={start} className="absolute inset-0 bg-black/85 text-white grid place-items-center text-center">
           <span>
             <span className="block text-[3vw] font-black">Start the board</span>
             <span className="block mt-[1vh] text-[1.4vw] opacity-80">Tap once: full screen, with the chime switched on</span>
