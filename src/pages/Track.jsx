@@ -792,15 +792,42 @@ function AppCard({ title, children, className = '' }) {
   )
 }
 
-function AppTrack({ order }) {
+// The top card's look for each kind of moment.
+const TONE = {
+  making: { card: 'border-farhat/25', head: 'bg-[#fdf0f0]', icon: 'bg-farhat', title: 'text-farhat', sub: 'text-ink/60', chip: 'border-farhat/20 text-farhat' },
+  ready: { card: 'border-[#c9ecd6]', head: 'bg-[#e8f7ee]', icon: 'bg-green-600', title: 'text-[#0d5c33]', sub: 'text-[#4b7a5e]', chip: 'border-[#cfe9d9] text-green-800' },
+  collected: { card: 'border-[#e5e2dc]', head: 'bg-[#f3f1ec]', icon: 'bg-stone-400', title: 'text-ink/70', sub: 'text-body', chip: 'border-[#e5e2dc] text-ink/70' },
+}
+
+function fileKind(name = '') {
+  const ext = (name.split('.').pop() || '').toLowerCase()
+  return ext === 'pdf' ? 'PDF' : ['doc', 'docx'].includes(ext) ? 'DOC' : 'IMG'
+}
+
+/**
+ * Everything about the order in one card: where it stands as the
+ * headline, its number and when it was paid (with how), and what was
+ * ordered, each item folding open to its lines, finishing and file.
+ */
+function OrderCard({ order, stage }) {
+  const [open, setOpen] = useState(() => new Set())
   const [copied, setCopied] = useState(false)
-  const stage = appStage(order)
-  const reached = APP_STEPS.findIndex(s => s.key === stage)
-  const times = order.stage_times || {}
   const lines = order.line_items || []
-  const branch = order.branch
-  const phone = branch?.phone || '0556244194'
-  const done = stage === 'ready' || stage === 'collected'
+  const times = order.stage_times || {}
+  const branch = order.branch?.name || 'Westland Branch'
+  const mood = stage === 'collected' ? 'collected' : stage === 'ready' ? 'ready' : 'making'
+  const tone = TONE[mood]
+  const step = APP_STEPS.find(s => s.key === stage)
+  const est = mood === 'making' ? estimateFor(order, stage) : null
+
+  const headline = mood === 'ready' ? 'Ready to collect' : mood === 'collected' ? 'Collected' : step?.label || 'In progress'
+  const sub = mood === 'ready' ? `Your order is ready at ${branch}`
+    : mood === 'collected' ? 'Thank you for printing with us'
+    : est ? estimateText(est)
+    : 'We’re on it'
+  const when = mood === 'ready' && times.ready ? `Since ${dateLabel(times.ready)}`
+    : mood === 'making' && order.promised_for ? `Ready about ${readyLabel(order.promised_for)}`
+    : null
 
   async function copy() {
     try {
@@ -810,35 +837,171 @@ function AppTrack({ order }) {
     } catch { /* the number is on screen to be read */ }
   }
 
+  const toggle = id => setOpen(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
+  return (
+    <section className={`rounded-[20px] border bg-white overflow-hidden ${tone.card}`}>
+      {/* Where it stands. */}
+      <div className={`flex gap-3 px-3.5 pt-3.5 pb-4 ${tone.head}`}>
+        <span className={`w-11 h-11 rounded-full grid place-items-center shrink-0 text-white ring-[6px] ring-white/60 ${tone.icon}`}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+               strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5" aria-hidden="true">
+            {mood === 'making' ? STEP_ICON[stage] : <path d="M5 12.5l4.5 4.5L19 7" />}
+          </svg>
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className={`text-lg font-extrabold leading-tight ${tone.title}`}>{headline}</p>
+          <p className={`mt-0.5 text-xs ${tone.sub}`}>{sub}</p>
+          {when && <p className={`text-xs ${tone.sub} opacity-80`}>{when}</p>}
+          <a href={directionsHref(order.branch)} target="_blank" rel="noreferrer"
+             className={`mt-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border text-[0.7rem] font-bold ${tone.chip}`}>
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3" aria-hidden="true">
+              <path d="M12 2a7 7 0 0 0-7 7c0 5.3 7 13 7 13s7-7.7 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" />
+            </svg>
+            {branch}
+            <span aria-hidden="true">›</span>
+          </a>
+        </div>
+      </div>
+
+      {/* Which order, and when it was paid. */}
+      <div className="grid grid-cols-2 px-3.5 pt-3.5">
+        <div className="flex gap-2 min-w-0">
+          <span className="w-8 h-8 rounded-[10px] bg-farhat/10 text-farhat grid place-items-center shrink-0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
+                 strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4" aria-hidden="true">
+              <path d="M7 3h7l4 4v14H7z" /><path d="M10 12h5M10 16h5" />
+            </svg>
+          </span>
+          <div className="min-w-0">
+            <p className="text-[0.65rem] text-body">Order number</p>
+            <button onClick={copy} className="flex items-center gap-1 text-[0.8rem] font-extrabold tabular-nums">
+              <span className="truncate">{order.order_number}</span>
+              <span className="text-[0.6rem] font-semibold text-body">{copied ? 'Copied' : '⧉'}</span>
+            </button>
+          </div>
+        </div>
+        <div className="flex gap-2 min-w-0 pl-3 border-l border-[#f0ede8]">
+          <span className="w-8 h-8 rounded-[10px] bg-farhat/10 text-farhat grid place-items-center shrink-0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
+                 strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4" aria-hidden="true">
+              <rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" />
+            </svg>
+          </span>
+          <div className="min-w-0">
+            <p className="text-[0.65rem] text-body">Paid on</p>
+            <p className="text-[0.8rem] font-extrabold">{order.paid_at ? dateLabel(order.paid_at) : '—'}</p>
+            <span className="mt-1 inline-flex items-center px-2 py-0.5 rounded-full bg-[#e8f7ee] text-green-800 text-[0.6rem] font-bold">
+              {paymentLabel(order)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* What was ordered: each item folds open. */}
+      <div className="px-3 pt-3 space-y-2">
+        {lines.map(line => {
+          const isOpen = open.has(line.id)
+          const photo = serviceImage(line.base_name || line.service_name)
+          return (
+            <div key={line.id} className="rounded-2xl border border-[#ece9e3] overflow-hidden">
+              <button onClick={() => toggle(line.id)} aria-expanded={isOpen}
+                      className="w-full flex items-center gap-2.5 p-2.5 text-left">
+                {photo ? (
+                  <img src={photo} alt="" className="w-11 h-11 rounded-xl object-cover shrink-0" />
+                ) : (
+                  <span className="w-11 h-11 rounded-xl bg-[#fdecec] grid place-items-center shrink-0">
+                    <ProductBadge name={line.base_name || line.service_name} onLight />
+                  </span>
+                )}
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[0.85rem] font-extrabold leading-snug">{line.service_name}</span>
+                  <span className="block text-xs text-body">{lineDetail(line)} · GHS {line.total}</span>
+                </span>
+                <span className={`w-7 h-7 rounded-full bg-[#f3f1ec] grid place-items-center shrink-0 transition-transform duration-300
+                                  ${isOpen ? 'rotate-180' : ''}`}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
+                       strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-ink/70" aria-hidden="true">
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </span>
+              </button>
+              <div className={`grid transition-[grid-template-rows] duration-[350ms] ease-out ${isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+                <div className="overflow-hidden">
+                  <div className="bg-[#fafaf8] border-t border-[#f0ede8] px-3 py-2 space-y-1.5">
+                    <Receipt icon={<><path d="M7 3h7l4 4v14H7z" /><path d="M10 12h5M10 16h5" /></>}
+                             title={line.service_name} note={lineDetail(line)} price={`GHS ${line.total}`} />
+                    {(line.addons || []).map((a, i) => (
+                      <Receipt key={i} icon={<><circle cx="12" cy="12" r="8" /><path d="M12 8v8M8 12h8" /></>}
+                               title={a.service_name} note={a.detail || `× ${a.quantity}`}
+                               price={a.total ? (Number(a.total) > 0 ? `GHS ${a.total}` : 'Free') : ''} />
+                    ))}
+                    {line.artwork_filename && (
+                      <div className="flex items-center gap-2.5 pt-2 mt-1 border-t border-[#ece9e3]">
+                        <span className="w-8 h-8 rounded-[10px] bg-farhat/10 text-farhat grid place-items-center shrink-0
+                                         text-[0.55rem] font-black">{fileKind(line.artwork_filename)}</span>
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-xs font-semibold truncate">{line.artwork_filename}</span>
+                          <span className="block text-[0.68rem] text-body">
+                            1 file · {line.artwork_verdict === 'warn' ? 'prints a little soft, accepted' : 'checked, good to print'}
+                          </span>
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* What was paid. */}
+      <div className="mx-3.5 mt-3 mb-3.5 pt-2.5 border-t border-dashed border-[#e5e2dc]">
+        {Number(order.discount_amount) > 0 && (
+          <div className="flex justify-between text-xs text-emerald-700 mb-1">
+            <span>{order.discount_reason}</span><span>− GHS {order.discount_amount}</span>
+          </div>
+        )}
+        <div className="flex justify-between items-baseline">
+          <span className="text-xs text-body">Total paid</span>
+          <span className="text-lg font-black tabular-nums">GHS {order.total}</span>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function Receipt({ icon, title, note, price }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className="w-8 h-8 rounded-[10px] bg-[#f3f1ec] text-ink/60 grid place-items-center shrink-0">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+             strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4" aria-hidden="true">{icon}</svg>
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-xs font-semibold">{title}</span>
+        {note && <span className="block text-[0.68rem] text-body">{note}</span>}
+      </span>
+      <span className="text-xs font-semibold tabular-nums shrink-0">{price}</span>
+    </div>
+  )
+}
+
+function AppTrack({ order }) {
+  const stage = appStage(order)
+  const branch = order.branch
+  const phone = branch?.phone || '0556244194'
+
   return (
     <div className="min-h-screen bg-white text-ink">
       <Header />
       <main className="max-w-md mx-auto px-4 pb-10">
-
-        {/* The order, and where it stands. */}
-        <div className="rounded-2xl bg-farhat/5 border border-farhat/15 px-4 py-3.5">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-lg font-extrabold tabular-nums">{order.order_number}</p>
-            <button onClick={copy} aria-label="Copy the order number"
-                    className="w-9 h-9 grid place-items-center rounded-xl bg-white text-body">
-              {copied ? (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
-                     strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-emerald-700"><path d="M5 12.5l4.5 4.5L19 7" /></svg>
-              ) : (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
-                     strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                  <rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" />
-                </svg>
-              )}
-            </button>
-          </div>
-          {order.paid_at && <p className="text-xs text-body">Paid {dateLabel(order.paid_at)}</p>}
-          <p className={`mt-2 text-sm font-bold ${done ? 'text-emerald-700' : 'text-farhat'}`}>
-            {stage === 'collected' ? 'Collected'
-              : stage === 'ready' ? 'Ready to collect'
-              : order.promised_for ? `Ready about ${readyLabel(order.promised_for)}` : 'We’re on it'}
-          </p>
-        </div>
+        <OrderCard order={order} stage={stage} />
 
         {order.is_halted && (
           <div className="mt-3 rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3">
@@ -851,57 +1014,6 @@ function AppTrack({ order }) {
 
         {/* Where it has got to, and what each step means. */}
         <Progress order={order} stage={stage} />
-
-        {/* What was ordered. */}
-        <AppCard title="Your order">
-          <div className="divide-y divide-[#f0ede8]">
-            {lines.map(line => {
-              const photo = serviceImage(line.base_name || line.service_name)
-              return (
-                <div key={line.id} className="flex gap-3 px-4 py-3">
-                  {photo ? (
-                    <img src={photo} alt="" className="w-14 h-14 rounded-xl object-cover shrink-0" />
-                  ) : (
-                    <span className="w-14 h-14 rounded-xl bg-[#fdecec] grid place-items-center shrink-0">
-                      <span className="scale-[1.3]"><ProductBadge name={line.base_name || line.service_name} onLight /></span>
-                    </span>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between gap-2">
-                      <p className="text-sm font-bold leading-snug">{line.service_name}</p>
-                      <p className="text-sm font-bold tabular-nums shrink-0">GHS {line.total}</p>
-                    </div>
-                    <p className="text-xs text-body">{lineDetail(line)}</p>
-                    {(line.addons || []).map((a, i) => (
-                      <p key={i} className="text-[0.7rem] text-body">
-                        + {a.service_name}{a.detail ? ` (${a.detail})` : ''} × {a.quantity}
-                      </p>
-                    ))}
-                    {line.artwork_filename && (
-                      <p className="mt-1 flex items-center gap-1 text-[0.7rem] font-semibold text-emerald-700 truncate">
-                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3 shrink-0" aria-hidden="true">
-                          <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm5 7.2l-6.1 6.9a1 1 0 0 1-1.5 0L6 12.6a1 1 0 0 1 1.5-1.3l2.6 2.9 5.4-6.1A1 1 0 0 1 17 9.2z" />
-                        </svg>
-                        <span className="truncate">{line.artwork_filename}</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          <div className="mx-4 py-3 border-t border-dashed border-[#e5e2dc] space-y-1">
-            {Number(order.discount_amount) > 0 && (
-              <div className="flex justify-between text-xs text-emerald-700">
-                <span>{order.discount_reason}</span><span>− GHS {order.discount_amount}</span>
-              </div>
-            )}
-            <div className="flex justify-between items-baseline">
-              <span className="text-xs text-body">{paymentLabel(order)}</span>
-              <span className="text-base font-extrabold tabular-nums">Paid GHS {order.total}</span>
-            </div>
-          </div>
-        </AppCard>
 
         {/* Where to collect. */}
         <AppCard title="Collect at">
