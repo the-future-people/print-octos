@@ -21,7 +21,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getCatalogue } from './api/client'
 import { rememberServerImages } from './lib/images'
 import Directions from './pages/Directions.jsx'
-
+import Board from './pages/Board.jsx'
 
 export default function App() {
   // The opening animation, on top of the app while it loads. Only in the
@@ -83,6 +83,7 @@ export default function App() {
         <Route path="/service/:serviceId" element={<Specify />} />
         <Route path="/checkout" element={<Checkout />} />
         <Route path="/track" element={<Track />} />
+        <Route path="/board/:branch" element={<Board />} />
         <Route path="/track/:orderNumber" element={<Track />} />
         {/* Where Paystack sends them afterwards, whether they paid or
             changed their mind, which is why the page asks before it
