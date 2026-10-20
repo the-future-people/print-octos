@@ -20,6 +20,21 @@ import client from '../api/client'
 const ROWS = 6
 const time = iso => new Date(iso).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
 
+// "4:00 pm" today, "Yesterday 4:00 pm", "Fri 1:10 pm" earlier in the week,
+// "14 Oct" beyond: never a bare time that could be any day.
+function since(iso) {
+  const at = new Date(iso)
+  const today = new Date()
+  const days = Math.floor((new Date(today.toDateString()) - new Date(at.toDateString())) / 86400000)
+  if (days <= 0) return time(iso)
+  if (days === 1) return `Yesterday ${time(iso)}`
+  if (days < 7) return `${at.toLocaleDateString('en-GB', { weekday: 'short' })} ${time(iso)}`
+  return at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}
+
+// A time already past is not a promise: say it is running late.
+const readyAbout = iso => (new Date(iso) < new Date() ? 'Running late' : time(iso))
+
 function chime(ctx) {
   if (!ctx) return
   const t = ctx.currentTime
@@ -38,12 +53,13 @@ function chime(ctx) {
 }
 
 // The full number, the part that tells orders apart lit up.
-function Num({ n, ready }) {
+function Num({ n, ready, small }) {
   const cut = Math.max(0, n.length - 3)
   return (
-    <span className="font-extrabold tracking-wide text-[#d9d9d9] text-[1.45vw] whitespace-nowrap">
+    <span className={`font-extrabold tracking-wide text-[#d9d9d9] whitespace-nowrap pr-[0.8vw]
+                      ${small ? 'text-[1.2vw]' : 'text-[1.45vw]'}`}>
       {n.slice(0, cut)}
-      <em className={`not-italic font-black ${ready ? 'text-[#4ade80] text-[2vw]' : 'text-[#fbbf24] text-[1.75vw]'}`}>
+      <em className={`not-italic font-black ${ready ? 'text-[#4ade80] text-[2vw]' : small ? 'text-[#fbbf24] text-[1.5vw]' : 'text-[#fbbf24] text-[1.75vw]'}`}>
         {n.slice(cut)}
       </em>
     </span>
@@ -176,18 +192,21 @@ export default function Board() {
               <small className="text-[0.8vw] tracking-widest">ORDERS</small>
             </span>
           </div>
-          <div className="grid grid-cols-[1.5fr_1.35fr_0.95fr_0.9fr] px-[1.2vw] py-[0.7vh] text-[0.85vw] tracking-widest text-[#9a9a9a] border-b border-[#2a2a2a]">
+          <div className="grid grid-cols-[1.85fr_1.2fr_0.85fr_0.8fr] px-[1.2vw] py-[0.7vh] text-[0.85vw] tracking-widest text-[#9a9a9a] border-b border-[#2a2a2a]">
             <span>ORDER</span><span>SERVICE</span><span>READY ABOUT</span><span>STAGE</span>
           </div>
           {left.rows.map(m => (
-            <div key={m.number} className="grid grid-cols-[1.5fr_1.35fr_0.95fr_0.9fr] items-center px-[1.2vw] py-[1.25vh] border-b border-[#262626] text-[1.25vw]">
-              <Num n={m.number} />
+            <div key={m.number} className="grid grid-cols-[1.85fr_1.2fr_0.85fr_0.8fr] items-center px-[1.2vw] py-[1.25vh] border-b border-[#262626] text-[1.25vw]">
+              <Num n={m.number} small />
               <span className="truncate pr-[0.6vw]">{m.service}</span>
-              <span className="tabular-nums">{m.ready_about ? time(m.ready_about) : '—'}</span>
+              <span className={`tabular-nums ${m.ready_about && new Date(m.ready_about) < new Date() ? 'text-[#fbbf24]' : ''}`}>
+                {m.ready_about ? readyAbout(m.ready_about) : '—'}
+              </span>
               <span className="justify-self-start text-[1vw] font-extrabold px-[0.8vw] py-[0.35vh] rounded-full bg-[#3b2a0b] text-[#fbbf24]">{m.stage}</span>
             </div>
           ))}
-          {making.length === 0 && <p className="px-[1.2vw] py-[3vh] text-[1.3vw] text-[#8a8a8a]">Nothing in the queue.</p>}
+          {!data && <p className="px-[1.2vw] py-[3vh] text-[1.3vw] text-[#8a8a8a]">Connecting to the shop…</p>}
+          {data && making.length === 0 && <p className="px-[1.2vw] py-[3vh] text-[1.3vw] text-[#8a8a8a]">Nothing in the queue.</p>}
           <Pager page={left.page} pages={left.pages} colour="#fbbf24" />
         </section>
 
@@ -215,11 +234,12 @@ export default function Board() {
                                text-[1.35vw] transition-colors duration-700 ${isNew ? 'bg-[#15803d] animate-pulse' : ''}`}>
                 <span className={isNew ? '[&_*]:!text-white' : ''}><Num n={r.number} ready /></span>
                 <span className="truncate pr-[0.6vw]">{r.service}</span>
-                <span className="tabular-nums">{isNew ? 'just now ✦' : time(r.since)}</span>
+                <span className="tabular-nums">{isNew ? 'just now ✦' : since(r.since)}</span>
               </div>
             )
           })}
-          {ready.length === 0 && <p className="px-[1.2vw] py-[3vh] text-[1.3vw] text-[#8a8a8a]">Nothing waiting yet.</p>}
+          {!data && <p className="px-[1.2vw] py-[3vh] text-[1.3vw] text-[#8a8a8a]">Connecting to the shop…</p>}
+          {data && ready.length === 0 && <p className="px-[1.2vw] py-[3vh] text-[1.3vw] text-[#8a8a8a]">Nothing waiting yet.</p>}
           <Pager page={right.page} pages={right.pages} colour="#4ade80" />
         </section>
       </main>
