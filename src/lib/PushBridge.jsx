@@ -36,8 +36,10 @@ export default function PushBridge() {
         accountDevice(value, platform).catch(() => { /* tried again next start */ })
       }))
       subs.push(await PushNotifications.addListener('pushNotificationReceived', () => {
+        // A message or a silent nudge: whatever is on screen catches up.
         queryClient.invalidateQueries({ queryKey: ['notifications'] })
         queryClient.invalidateQueries({ queryKey: ['my-orders'] })
+        queryClient.invalidateQueries({ queryKey: ['tracked-order'] })
       }))
       subs.push(await PushNotifications.addListener('pushNotificationActionPerformed', ({ notification }) => {
         const { order, token } = notification?.data || {}
@@ -55,6 +57,21 @@ export default function PushBridge() {
 
     return () => { live = false; subs.forEach(s => s.remove()) }
   }, [account, navigate, queryClient])
+
+  // Back from the background: everything refreshes at once rather than
+  // waiting for its next check. A nudge sent while the app was away could
+  // not be heard.
+  useEffect(() => {
+    if (!onPhone()) return undefined
+    let sub
+    ;(async () => {
+      const { App: Native } = await import('@capacitor/app')
+      sub = await Native.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) queryClient.invalidateQueries()
+      })
+    })()
+    return () => { sub?.remove() }
+  }, [queryClient])
 
   return null
 }

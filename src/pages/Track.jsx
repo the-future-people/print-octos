@@ -54,7 +54,13 @@ function Record({ orderNumber, token }) {
     retry: false,
     // A customer watching this wants it to move on its own rather than
     // being told to refresh.
-    refetchInterval: 60_000,
+    // Every 15 seconds while the order is moving, a minute once it waits
+    // on the shelf or has gone: a safety net under the silent nudges.
+    refetchInterval: query => {
+      const o = query.state.data
+      const settled = o && (o.handover_state === 'HANDED_OVER' || o.work_state === 'DONE')
+      return settled ? 60_000 : 15_000
+    },
   })
 
   useEffect(() => {

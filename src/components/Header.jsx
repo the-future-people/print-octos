@@ -240,7 +240,9 @@ function Bell() {
     queryFn: () => accountNotifications().then(r => r.data),
     refetchInterval: 60_000,
   })
-  const unread = data?.unread || 0
+  // Orders with news, not messages: two updates on one order is one.
+  const unread = new Set((data?.items || []).filter(n => !n.read)
+    .map(n => n.order_number || `note-${n.id}`)).size
 
   return (
     <button onClick={() => navigate('/notifications')}
