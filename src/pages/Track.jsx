@@ -851,7 +851,8 @@ function OrderCard({ order, stage, onDirections }) {
     : est ? estimateText(est)
     : 'We’re on it'
   const when = mood === 'ready' && times.ready ? `Since ${dateLabel(times.ready)}`
-    : mood === 'making' && order.promised_for ? `Ready about ${readyLabel(order.promised_for)}`
+    : mood === 'making' && order.promised_for
+      ? `Ready about ${readyLabel(order.promised_for)}${order.first_promise ? ` (was ${readyLabel(order.first_promise)})` : ''}`
     : null
 
   async function copy() {
