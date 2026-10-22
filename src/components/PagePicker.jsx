@@ -89,7 +89,7 @@ function Seg({ options, value, onChange }) {
  * defaults          { colour, double, copies } for a new set
  * priceOf           async (set) => total, for the price on the button
  */
-export default function PagePicker({ file, pageCount, sets, onChange, onClose, canColour, defaults, priceOf }) {
+export default function PagePicker({ file, pageCount, sets, onChange, onClose, canColour, defaults, priceOf, addons = [] }) {
   const count = Math.max(1, Number(pageCount) || 1)
   const numbers = useMemo(() => Array.from({ length: count }, (_, i) => i + 1), [count])
   const [chosen, setChosen] = useState(() => new Set(count === 1 ? [1] : []))
@@ -97,6 +97,15 @@ export default function PagePicker({ file, pageCount, sets, onChange, onClose, c
   const [double, setDouble] = useState(defaults.double)
   const [copies, setCopies] = useState(defaults.copies || 1)
   const [price, setPrice] = useState(null)
+  // This set's own finishing: bound, laminated, in an envelope. Counted
+  // per copy of this set (binding, envelopes) or per sheet (lamination).
+  const [finish, setFinish] = useState(() => new Set())
+  const [perCopy, setPerCopy] = useState({})
+  const offered = addons.filter(a => a.available)
+  const finishing = [...finish].map(id => {
+    const a = offered.find(x => x.id === id)
+    return a?.packing ? { service: id, per_copy: perCopy[id] ?? true } : id
+  })
 
   const setOf = useMemo(() => {
     const map = {}
@@ -104,14 +113,14 @@ export default function PagePicker({ file, pageCount, sets, onChange, onClose, c
     return map
   }, [sets])
 
-  const draft = { pages: [...chosen].sort((a, b) => a - b), colour, double, copies }
+  const draft = { pages: [...chosen].sort((a, b) => a - b), colour, double, copies, addons: finishing }
   useEffect(() => {
     if (!chosen.size) { setPrice(null); return undefined }
     let live = true
     const t = setTimeout(() => { priceOf(draft).then(v => live && setPrice(v)).catch(() => live && setPrice(null)) }, 300)
     return () => { live = false; clearTimeout(t) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chosen, colour, double, copies])
+  }, [chosen, colour, double, copies, finish, perCopy])
 
   const toggle = n => setChosen(prev => {
     const next = new Set(prev)
@@ -123,6 +132,7 @@ export default function PagePicker({ file, pageCount, sets, onChange, onClose, c
     if (!chosen.size) return
     onChange([...sets, { id: crypto.randomUUID(), ...draft }])
     setChosen(new Set())
+    setFinish(new Set())
   }
 
   // The commonest mix: page one in colour, the rest in black and white.
@@ -165,6 +175,7 @@ export default function PagePicker({ file, pageCount, sets, onChange, onClose, c
               <span key={s.id} className={`inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-md text-[0.68rem] font-bold
                                            ${s.colour ? 'bg-[#fdecec] text-[#b91c1c]' : 'bg-[#f3f1ec] text-ink/70'}`}>
                 Set {i + 1}: p.{label(s.pages)} · {s.colour ? 'Colour' : 'B&W'}{s.double ? ' · both sides' : ''} ×{s.copies}
+                {s.addons?.length ? ` · +${s.addons.length} finishing` : ''}
                 <button type="button" aria-label={`Remove set ${i + 1}`}
                         onClick={() => onChange(sets.filter(x => x.id !== s.id))}
                         className="w-4 h-4 grid place-items-center rounded hover:bg-black/10">×</button>
@@ -200,6 +211,30 @@ export default function PagePicker({ file, pageCount, sets, onChange, onClose, c
                       className="w-8 h-8 rounded-lg bg-farhat/10 text-farhat text-lg">+</button>
             </span>
           </div>
+          {offered.length > 0 && (
+            <div className="pt-1">
+              <p className="text-[0.7rem] font-bold text-body uppercase tracking-wider">Finishing for this set</p>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {offered.map(a => {
+                  const on = finish.has(a.id)
+                  return (
+                    <button key={a.id} type="button"
+                            onClick={() => setFinish(prev => { const n = new Set(prev); on ? n.delete(a.id) : n.add(a.id); return n })}
+                            className={`px-2.5 py-1 rounded-full text-[0.7rem] font-bold border
+                                        ${on ? 'bg-farhat text-white border-farhat' : 'border-[#e5e2dc] text-ink'}`}>
+                      {on ? '✓ ' : ''}{a.name.replace(/^A[3-5]\s+/, '')}
+                    </button>
+                  )
+                })}
+              </div>
+              {offered.filter(a => a.packing && finish.has(a.id)).map(a => (
+                <div key={a.id} className="mt-1.5">
+                  <Seg options={[[true, 'One per copy'], [false, 'One for this set']]}
+                       value={perCopy[a.id] ?? true} onChange={v => setPerCopy(m => ({ ...m, [a.id]: v }))} />
+                </div>
+              ))}
+            </div>
+          )}
           <div className="flex gap-2 pt-1">
             <button type="button" onClick={onClose}
                     className="flex-1 py-2.5 rounded-xl border border-[#e5e2dc] text-sm font-bold">Done</button>

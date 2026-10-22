@@ -198,4 +198,14 @@ export const getRoute = (from, to, mode) =>
     params: { from: from.join(','), to: to.join(','), mode },
   })
 
+  // Several files, each with its sets, added to the order in one go.
+export const commitBatch = ({ key, orderNumber, token, specifications, files }) =>
+  client.post('/api/v1/storefront/commit/batch/', {
+    idempotency_key: key,
+    order: orderNumber || undefined,
+    token: token || undefined,
+    specifications,
+    files,
+  })
+
 export default client

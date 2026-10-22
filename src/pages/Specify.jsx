@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { getCatalogue, quoteLine, commitLine } from '../api/client'
+import { getCatalogue, quoteLine, commitLine, commitBatch } from '../api/client'
 import { useCart } from '../lib/CartContext.jsx'
 import { useToast } from '../lib/ToastContext.jsx'
 import { useAccount } from '../lib/AccountContext.jsx'
@@ -76,6 +76,9 @@ export default function Specify() {
   const [batch, setBatch] = useState([])
   const [batchQuotes, setBatchQuotes] = useState({})
   const [pickerFor, setPickerFor] = useState(null)
+  // One key per batch attempt: a retry of a lost response is the same
+  // batch, never a second one.
+  const batchKey = useRef(crypto.randomUUID().replace(/-/g, ''))
   const [committing, setCommitting] = useState(false)
   const [problem, setProblem] = useState('')
 
@@ -234,11 +237,14 @@ export default function Specify() {
   const setsOf = item => (item.sets?.length
     ? item.sets
     : [{ id: 'all', whole: true, pages: null, colour: serviceIsColour, double: isDouble(service), copies: Number(quantity) || 1 }])
+  // A file printed whole takes the product page's finishing; a set
+  // carries its own.
+  const addonsFor = set => (set.whole ? addonsPayload : (set.addons || []))
   const pagesIn = (item, set) => (set.whole ? Math.max(1, Number(item.result?.page_count) || 1) : set.pages.length)
   const priceSet = (item, set) => {
     const svc = serviceFor(set)
     const perCopy = Math.ceil(pagesIn(item, set) / (svc?.pages_per_sheet || 1))
-    return quoteLine(svc.id, set.copies || 1, { ...values, pages: perCopy }, addonsPayload).then(r => r.data)
+    return quoteLine(svc.id, set.copies || 1, { ...values, pages: perCopy }, addonsFor(set)).then(r => r.data)
   }
   const pageLabel = pages => {
     const p = [...pages].sort((a, b) => a - b)
@@ -289,44 +295,44 @@ export default function Specify() {
   // Each good file its own line, one after another. A line added stays
   // added: if the connection drops halfway, Continue carries on with the
   // rest, each with its own key so a retry is never a second copy.
+  // Every file and every set in one request: added all together or not
+  // at all, priced by the server from each set's own pages, so the cart
+  // always matches what was shown here.
   async function handleBatchContinue(thenWhat) {
     if (committing) return
     setCommitting(true)
     setProblem('')
-    let orderNumber = cart.saved?.order_number
-    let token = cart.saved?.access_token
-    let added = 0
-    for (const item of batchReady) {
-      for (const set of setsOf(item)) {
-        try {
-          const { data } = await commitLine({
-            // Each set its own key, steady across retries.
-            key: set.whole ? item.key : item.key.slice(0, 16) + String(set.id).replace(/-/g, '').slice(0, 32),
-            orderNumber, token,
-            serviceId: serviceFor(set).id,
+    try {
+      const { data } = await commitBatch({
+        key: batchKey.current,
+        orderNumber: cart.saved?.order_number,
+        token: cart.saved?.access_token,
+        specifications: values,
+        files: batchReady.map(item => ({
+          artwork_token: item.result.token,
+          checked_service: service.id,
+          sets: setsOf(item).map(set => ({
+            service: serviceFor(set).id,
             quantity: set.copies || 1,
-            specifications: set.whole ? values : { ...values, page_selection: pageLabel(set.pages) },
-            addons: addonsPayload,
-            artworkToken: item.result.token,
-          })
-          cart.adopt(data)
-          orderNumber = data?.order_number || orderNumber
-          token = data?.access_token || token
-          added += 1
-        } catch (err) {
-          setProblem(`${added ? `${added} added to your cart. ` : ''}${item.file.name}: ${
-            err.response?.data?.detail || 'couldn’t be added just now. Try again.'}`)
-          setCommitting(false)
-          return
-        }
-      }
-      setBatch(list => list.filter(i => i.id !== item.id))
+            page_selection: set.whole ? null : pageLabel(set.pages),
+            addons: addonsFor(set),
+          })),
+        })),
+      })
+      cart.adopt(data)
+      const added = data?.line_ids?.length || 0
+      setBatch([])
+      batchKey.current = crypto.randomUUID().replace(/-/g, '')
+      toast.show(
+        `${added} item${added === 1 ? '' : 's'} added to your cart`,
+        'We’ll keep it for 7 days — pick up where you left off any time.',
+      )
+      navigate(thenWhat === 'checkout' ? '/checkout' : '/')
+    } catch (err) {
+      setProblem(err.response?.data?.detail || 'We couldn’t add those just now. Try again in a moment.')
+      batchKey.current = crypto.randomUUID().replace(/-/g, '')
+      setCommitting(false)
     }
-    toast.show(
-      `${added} item${added === 1 ? '' : 's'} added to your cart`,
-      'We’ll keep it for 7 days — pick up where you left off any time.',
-    )
-    navigate(thenWhat === 'checkout' ? '/checkout' : '/')
   }
 
   async function handleContinue(thenWhat) {
@@ -457,6 +463,7 @@ export default function Specify() {
       canColour={canColour}
       defaults={{ colour: serviceIsColour, double: isDouble(service), copies: Number(quantity) || 1 }}
       priceOf={set => priceSet(pickerItem, set).then(q => q.total)}
+      addons={addons}
     />
   )
 
@@ -663,7 +670,9 @@ export default function Specify() {
                     <path d="M12 3l2.5 5 5.5.8-4 3.9.9 5.5L12 15.6 7.1 18.2l.9-5.5-4-3.9 5.5-.8z" />
                   </svg>
                   Finishing
-                  <span className="text-xs font-normal text-body">· optional</span>
+                  <span className="text-xs font-normal text-body">
+                    · optional{batchMode ? ': for files printed whole; a set of pages chooses its own' : ''}
+                  </span>
                 </p>
 
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -988,6 +997,7 @@ function AppSpecify(p) {
     batchMode, batch, setBatch, batchQuotes, batchReady, shownTotal, copies,
     batchPrices, setPickerFor, itemTotal,
   } = p
+  void itemTotal
   const [breakdown, setBreakdown] = useState(false)
   const chips = specChips(product)
   let step = 0
@@ -1153,7 +1163,9 @@ function AppSpecify(p) {
           {addons.length > 0 && (
             <section className="mt-7">
               <StepTitle n={++step} title="Finishing" note="Optional" />
-              <p className="mt-1 ml-[38px] text-sm text-body">Add finishing to your order.</p>
+              <p className="mt-1 ml-[38px] text-sm text-body">
+                {batchMode ? 'For files printed whole. A set of pages chooses its own.' : 'Add finishing to your order.'}
+              </p>
               <div className="mt-3 space-y-2.5">
                 {addons.map(addon => {
                   const on = chosen.includes(addon.id)
