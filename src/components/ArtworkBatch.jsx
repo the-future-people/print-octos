@@ -40,7 +40,19 @@ const TONE = {
   refuse: { text: 'text-farhat', label: 'We can’t print this one' },
 }
 
-function Row({ item, price, onRemove, onRetry }) {
+const pagesLabel = pages => {
+  const p = [...pages].sort((a, b) => a - b)
+  const runs = []
+  for (let i = 0; i < p.length; i++) {
+    let j = i
+    while (j + 1 < p.length && p[j + 1] === p[j] + 1) j++
+    runs.push(i === j ? `${p[i]}` : `${p[i]}–${p[j]}`)
+    i = j
+  }
+  return runs.join(', ')
+}
+
+function Row({ item, price, onRemove, onRetry, onOpen }) {
   const [open, setOpen] = useState(false)
   const tone = item.result ? TONE[item.result.verdict] : null
   const pages = Number(item.result?.page_count) || 0
@@ -73,6 +85,12 @@ function Row({ item, price, onRemove, onRetry }) {
             </span>
           )}
         </button>
+        {onOpen && item.status === 'done' && item.result?.verdict !== 'refuse' && (
+          <button type="button" onClick={() => onOpen(item)}
+                  className="shrink-0 px-2.5 py-1 rounded-lg bg-farhat/10 text-farhat text-[0.7rem] font-bold">
+            {item.sets?.length ? 'Edit pages' : 'Choose pages'}
+          </button>
+        )}
         {price && item.status === 'done' && item.result?.verdict !== 'refuse' && (
           <span className="text-sm font-bold tabular-nums shrink-0">GHS {price}</span>
         )}
@@ -83,6 +101,16 @@ function Row({ item, price, onRemove, onRetry }) {
         <button type="button" onClick={onRemove} aria-label={`Remove ${item.file.name}`}
                 className="shrink-0 w-7 h-7 grid place-items-center rounded-full text-body hover:bg-substrate">×</button>
       </div>
+      {item.status === 'done' && item.sets?.length > 0 && (
+        <div className="px-3 pb-2.5 -mt-1 flex flex-wrap gap-1">
+          {item.sets.map(set => (
+            <span key={set.id} className={`px-1.5 py-0.5 rounded-md text-[0.62rem] font-bold
+                                         ${set.colour ? 'bg-[#fdecec] text-[#b91c1c]' : 'bg-[#f3f1ec] text-ink/70'}`}>
+              p.{pagesLabel(set.pages)} · {set.colour ? 'Colour' : 'B&W'}{set.double ? ' · both sides' : ''} ×{set.copies}
+            </span>
+          ))}
+        </div>
+      )}
       {open && notes.length > 0 && (
         <ul className="px-3.5 pb-3 -mt-1 space-y-1.5">
           {notes.map((c, i) => <li key={i} className="text-xs leading-relaxed text-ink/80">• {c.message}</li>)}
@@ -92,7 +120,7 @@ function Row({ item, price, onRemove, onRetry }) {
   )
 }
 
-export default function ArtworkBatch({ service, specifications, items, setItems, prices = {} }) {
+export default function ArtworkBatch({ service, specifications, items, setItems, prices = {}, onOpen }) {
   const input = useRef(null)
   const started = useRef(new Set())
   const [notice, setNotice] = useState('')
@@ -137,7 +165,7 @@ export default function ArtworkBatch({ service, specifications, items, setItems,
 
       <div className="space-y-2">
         {items.map(item => (
-          <Row key={item.id} item={item} price={prices[item.id]}
+          <Row key={item.id} item={item} price={prices[item.id]} onOpen={onOpen}
                onRemove={() => setItems(list => list.filter(i => i.id !== item.id))}
                onRetry={() => setItems(list => list.map(i => (i.id === item.id ? recheck(i) : i)))} />
         ))}

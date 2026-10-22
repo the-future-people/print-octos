@@ -8,6 +8,7 @@ import { useAccount } from '../lib/AccountContext.jsx'
 import { serviceImage } from '../lib/images'
 import ArtworkUpload from '../components/ArtworkUpload.jsx'
 import ArtworkBatch, { recheck } from '../components/ArtworkBatch.jsx'
+import PagePicker from '../components/PagePicker.jsx'
 import Header from '../components/Header.jsx'
 import ProductBadge from '../components/ProductBadge.jsx'
 /**
@@ -74,6 +75,7 @@ export default function Specify() {
   // on its own and each its own line; everything else takes one.
   const [batch, setBatch] = useState([])
   const [batchQuotes, setBatchQuotes] = useState({})
+  const [pickerFor, setPickerFor] = useState(null)
   const [committing, setCommitting] = useState(false)
   const [problem, setProblem] = useState('')
 
@@ -202,23 +204,67 @@ export default function Specify() {
     return () => clearTimeout(timer)
   }, [service, values, quantity, addonsPayload, sizeMissing, comingSoon, waitingForFile, sheets, fromFile])
 
+  // ── Colour, black and white, one side and both ────────────────────
+  // Each colour service knows its black-and-white twin (pair_colours),
+  // and its sides by how many pages fit a sheet. A set's choices pick
+  // the service it is priced and printed as.
+  const byId = useMemo(() => {
+    const map = {}
+    services.forEach(s => { map[s.id] = s; (s.variants || []).forEach(v => { map[v.id] = v }) })
+    return map
+  }, [services])
+  const family = useMemo(() => {
+    const own = variants.length ? variants : (product ? [product] : [])
+    const colourOwn = own.filter(v => v.bw_counterpart)
+    if (colourOwn.length) {
+      return { colour: colourOwn, mono: colourOwn.map(v => byId[v.bw_counterpart]).filter(Boolean) }
+    }
+    const ids = new Set(own.map(v => v.id))
+    return { colour: Object.values(byId).filter(v => v.bw_counterpart && ids.has(v.bw_counterpart)), mono: own }
+  }, [variants, product, byId])
+  const canColour = family.colour.length > 0 && family.mono.length > 0
+  const isDouble = v => Number(v?.pages_per_sheet) === 2
+  const serviceIsColour = !!service?.bw_counterpart
+  function serviceFor(set) {
+    if (set.whole) return service
+    const list = canColour ? (set.colour ? family.colour : family.mono) : (variants.length ? variants : [service])
+    return list.find(v => isDouble(v) === !!set.double) || list[0] || service
+  }
+  // A file nobody has opened prints every page with the product's settings.
+  const setsOf = item => (item.sets?.length
+    ? item.sets
+    : [{ id: 'all', whole: true, pages: null, colour: serviceIsColour, double: isDouble(service), copies: Number(quantity) || 1 }])
+  const pagesIn = (item, set) => (set.whole ? Math.max(1, Number(item.result?.page_count) || 1) : set.pages.length)
+  const priceSet = (item, set) => {
+    const svc = serviceFor(set)
+    const perCopy = Math.ceil(pagesIn(item, set) / (svc?.pages_per_sheet || 1))
+    return quoteLine(svc.id, set.copies || 1, { ...values, pages: perCopy }, addonsPayload).then(r => r.data)
+  }
+  const pageLabel = pages => {
+    const p = [...pages].sort((a, b) => a - b)
+    const runs = []
+    for (let i = 0; i < p.length; i++) {
+      let j = i
+      while (j + 1 < p.length && p[j + 1] === p[j] + 1) j++
+      runs.push(i === j ? `${p[i]}` : `${p[i]}–${p[j]}`)
+      i = j
+    }
+    return runs.join(', ')
+  }
+
   // Several files: each priced by the server from its own pages, with
   // the same settings, finishing and copies. Asked once the checks are in.
   const batchReady = batch.filter(i => i.status === 'done' && i.result?.token && i.result.verdict !== 'refuse')
   const batchBusy = batch.some(i => i.status === 'waiting' || i.status === 'sending')
-  const readyKey = batchReady.map(i => `${i.id}:${i.result.page_count}`).join('|')
+  const readyKey = batchReady.map(i => `${i.id}:${i.result.page_count}:${JSON.stringify(i.sets || null)}`).join('|')
   useEffect(() => {
     if (!batchMode || !service || comingSoon) return undefined
     if (!batchReady.length) { setBatchQuotes({}); return undefined }
     const timer = setTimeout(() => {
       setPricing(true)
       setProblem('')
-      Promise.all(batchReady.map(item => {
-        const pages = Math.max(1, Number(item.result.page_count) || 1)
-        const perCopy = Math.ceil(pages / (service.pages_per_sheet || 1))
-        return quoteLine(service.id, Number(quantity) || 1, { ...values, pages: perCopy }, addonsPayload)
-          .then(r => [item.id, r.data])
-      }))
+      Promise.all(batchReady.flatMap(item => setsOf(item).map(set =>
+        priceSet(item, set).then(q => [`${item.id}:${set.id}`, q]))))
         .then(pairs => setBatchQuotes(Object.fromEntries(pairs)))
         .catch(err => setProblem(err.response?.data?.detail || 'We could not price those files. Try again.'))
         .finally(() => setPricing(false))
@@ -226,8 +272,12 @@ export default function Specify() {
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchMode, service, readyKey, quantity, addonsPayload, values, comingSoon])
-  const batchPriced = batchReady.length > 0 && batchReady.every(i => batchQuotes[i.id])
-  const batchTotal = batchReady.reduce((sum, i) => sum + Number(batchQuotes[i.id]?.total || 0), 0)
+  const unitsOf = item => setsOf(item).map(set => batchQuotes[`${item.id}:${set.id}`])
+  const batchPriced = batchReady.length > 0 && batchReady.every(i => unitsOf(i).every(Boolean))
+  const itemTotal = item => unitsOf(item).reduce((sum, q) => sum + Number(q?.total || 0), 0)
+  const batchTotal = batchReady.reduce((sum, i) => sum + itemTotal(i), 0)
+  const batchPrices = Object.fromEntries(batchReady.filter(i => unitsOf(i).every(Boolean))
+    .map(i => [i.id, itemTotal(i).toFixed(2)]))
 
   // The artwork was judged against a size. Changing the size retires
   // the verdict — a file fine on a small print is refused across six
@@ -247,29 +297,33 @@ export default function Specify() {
     let token = cart.saved?.access_token
     let added = 0
     for (const item of batchReady) {
-      try {
-        const { data } = await commitLine({
-          key: item.key, orderNumber, token,
-          serviceId: service.id,
-          quantity: Number(quantity) || 1,
-          specifications: values,
-          addons: addonsPayload,
-          artworkToken: item.result.token,
-        })
-        cart.adopt(data)
-        orderNumber = data?.order_number || orderNumber
-        token = data?.access_token || token
-        added += 1
-        setBatch(list => list.filter(i => i.id !== item.id))
-      } catch (err) {
-        setProblem(`${added ? `${added} added to your cart. ` : ''}${item.file.name}: ${
-          err.response?.data?.detail || 'couldn’t be added just now. Try again.'}`)
-        setCommitting(false)
-        return
+      for (const set of setsOf(item)) {
+        try {
+          const { data } = await commitLine({
+            // Each set its own key, steady across retries.
+            key: set.whole ? item.key : item.key.slice(0, 16) + String(set.id).replace(/-/g, '').slice(0, 32),
+            orderNumber, token,
+            serviceId: serviceFor(set).id,
+            quantity: set.copies || 1,
+            specifications: set.whole ? values : { ...values, page_selection: pageLabel(set.pages) },
+            addons: addonsPayload,
+            artworkToken: item.result.token,
+          })
+          cart.adopt(data)
+          orderNumber = data?.order_number || orderNumber
+          token = data?.access_token || token
+          added += 1
+        } catch (err) {
+          setProblem(`${added ? `${added} added to your cart. ` : ''}${item.file.name}: ${
+            err.response?.data?.detail || 'couldn’t be added just now. Try again.'}`)
+          setCommitting(false)
+          return
+        }
       }
+      setBatch(list => list.filter(i => i.id !== item.id))
     }
     toast.show(
-      `${added} file${added === 1 ? '' : 's'} added to your cart`,
+      `${added} item${added === 1 ? '' : 's'} added to your cart`,
       'We’ll keep it for 7 days — pick up where you left off any time.',
     )
     navigate(thenWhat === 'checkout' ? '/checkout' : '/')
@@ -392,8 +446,24 @@ export default function Specify() {
   const shownTotal = batchMode ? (batchPriced ? batchTotal.toFixed(2) : null) : (quote ? quote.total : null)
   const copies = Number(quantity) || 1
 
+  const pickerItem = batch.find(i => i.id === pickerFor)
+  const picker = pickerItem && (
+    <PagePicker
+      file={pickerItem.file}
+      pageCount={pickerItem.result?.page_count}
+      sets={pickerItem.sets || []}
+      onChange={sets => setBatch(list => list.map(i => (i.id === pickerItem.id ? { ...i, sets } : i)))}
+      onClose={() => setPickerFor(null)}
+      canColour={canColour}
+      defaults={{ colour: serviceIsColour, double: isDouble(service), copies: Number(quantity) || 1 }}
+      priceOf={set => priceSet(pickerItem, set).then(q => q.total)}
+    />
+  )
+
   if (inApp) {
     return (
+      <>
+      {picker}
       <AppSpecify
         {...{
           product, service, variants, photo, fields, values, quantity, quantityField,
@@ -402,9 +472,11 @@ export default function Specify() {
           waitingForFile, chooseVariant, setField, clampField, setValues, stepQuantity,
           setQuantity, toggleAddon, packingFor, setPerCopy, handleContinue, cartCount: cart.count,
           navigate, batchMode, batch, setBatch, batchQuotes, batchReady, shownTotal, copies,
+          batchPrices, setPickerFor, itemTotal,
         }}
         continueLabel={continueLabel === 'Checkout' ? 'Continue' : continueLabel}
       />
+      </>
     )
   }
 
@@ -412,6 +484,7 @@ export default function Specify() {
     <div className="min-h-screen bg-white text-ink">
 
       <Header back />
+      {picker}
 
       <main className="max-w-4xl mx-auto px-5 pb-12">
 
@@ -681,7 +754,7 @@ export default function Specify() {
                   Each one is checked before you pay, and printed with the settings above.
                 </p>
                 <ArtworkBatch service={service} specifications={values} items={batch} setItems={setBatch}
-                              prices={Object.fromEntries(Object.entries(batchQuotes).map(([k, q]) => [k, q.total]))} />
+                              prices={batchPrices} onOpen={item => setPickerFor(item.id)} />
               </div>
             ) : (
               <ArtworkUpload
@@ -913,6 +986,7 @@ function AppSpecify(p) {
     setField, clampField, setValues, stepQuantity, setQuantity, toggleAddon, packingFor,
     setPerCopy, handleContinue, cartCount, navigate,
     batchMode, batch, setBatch, batchQuotes, batchReady, shownTotal, copies,
+    batchPrices, setPickerFor, itemTotal,
   } = p
   const [breakdown, setBreakdown] = useState(false)
   const chips = specChips(product)
@@ -1059,7 +1133,7 @@ function AppSpecify(p) {
               <StepTitle n={++step} title={batchMode ? 'Your files' : 'Your file'} />
               {batchMode ? (
                 <ArtworkBatch service={service} specifications={values} items={batch} setItems={setBatch}
-                              prices={Object.fromEntries(Object.entries(batchQuotes).map(([k, q]) => [k, q.total]))} />
+                              prices={batchPrices} onOpen={item => setPickerFor(item.id)} />
               ) : sizeMissing ? (
                 <p className="mt-2 text-sm text-body">Enter the size above, and we’ll check your file against it.</p>
               ) : (
@@ -1180,7 +1254,7 @@ function AppSpecify(p) {
               {batchReady.map(item => (
                 <div key={item.id} className="flex justify-between gap-3">
                   <span className="truncate">{item.file.name}</span>
-                  <span className="tabular-nums shrink-0">{batchQuotes[item.id] ? `GHS ${batchQuotes[item.id].total}` : '…'}</span>
+                  <span className="tabular-nums shrink-0">{batchPrices[item.id] ? `GHS ${batchPrices[item.id]}` : '…'}</span>
                 </div>
               ))}
             </div>
