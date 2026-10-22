@@ -7,6 +7,7 @@ import { useToast } from '../lib/ToastContext.jsx'
 import { useAccount } from '../lib/AccountContext.jsx'
 import { serviceImage } from '../lib/images'
 import ArtworkUpload from '../components/ArtworkUpload.jsx'
+import ArtworkBatch, { recheck } from '../components/ArtworkBatch.jsx'
 import Header from '../components/Header.jsx'
 import ProductBadge from '../components/ProductBadge.jsx'
 /**
@@ -69,6 +70,10 @@ export default function Specify() {
   const [quote, setQuote] = useState(null)
   const [pricing, setPricing] = useState(false)
   const [artwork, setArtwork] = useState(null)
+  // Products priced by the page take several files at once, each checked
+  // on its own and each its own line; everything else takes one.
+  const [batch, setBatch] = useState([])
+  const [batchQuotes, setBatchQuotes] = useState({})
   const [committing, setCommitting] = useState(false)
   const [problem, setProblem] = useState('')
 
@@ -81,6 +86,7 @@ export default function Specify() {
   // Pages are never typed online: the file says how many it has. The
   // counter still asks, because there the job arrives as paper.
   const fromFile = !!service?.counts_pages
+  const batchMode = fromFile
   const fields = useMemo(
     () => (service?.spec_template || []).filter(
       f => f.key !== 'quantity' && !(fromFile && f.key === 'pages'),
@@ -118,6 +124,8 @@ export default function Specify() {
     setPerCopy({})
     setQuote(null)
     setArtwork(null)
+    setBatch([])
+    setBatchQuotes({})
     setProblem('')
     commitKey.current = crypto.randomUUID().replace(/-/g, '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -131,6 +139,9 @@ export default function Specify() {
     const next = variants.find(v => v.id === id)
     setVariantId(id)
     setArtwork(null)
+    // Every file was checked for the other version: check each again.
+    setBatch(list => list.map(recheck))
+    setBatchQuotes({})
     setChosen(c => c.filter(a => (next?.addons || []).some(x => x.id === a && x.available)))
     commitKey.current = crypto.randomUUID().replace(/-/g, '')
   }
@@ -191,6 +202,33 @@ export default function Specify() {
     return () => clearTimeout(timer)
   }, [service, values, quantity, addonsPayload, sizeMissing, comingSoon, waitingForFile, sheets, fromFile])
 
+  // Several files: each priced by the server from its own pages, with
+  // the same settings, finishing and copies. Asked once the checks are in.
+  const batchReady = batch.filter(i => i.status === 'done' && i.result?.token && i.result.verdict !== 'refuse')
+  const batchBusy = batch.some(i => i.status === 'waiting' || i.status === 'sending')
+  const readyKey = batchReady.map(i => `${i.id}:${i.result.page_count}`).join('|')
+  useEffect(() => {
+    if (!batchMode || !service || comingSoon) return undefined
+    if (!batchReady.length) { setBatchQuotes({}); return undefined }
+    const timer = setTimeout(() => {
+      setPricing(true)
+      setProblem('')
+      Promise.all(batchReady.map(item => {
+        const pages = Math.max(1, Number(item.result.page_count) || 1)
+        const perCopy = Math.ceil(pages / (service.pages_per_sheet || 1))
+        return quoteLine(service.id, Number(quantity) || 1, { ...values, pages: perCopy }, addonsPayload)
+          .then(r => [item.id, r.data])
+      }))
+        .then(pairs => setBatchQuotes(Object.fromEntries(pairs)))
+        .catch(err => setProblem(err.response?.data?.detail || 'We could not price those files. Try again.'))
+        .finally(() => setPricing(false))
+    }, 400)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchMode, service, readyKey, quantity, addonsPayload, values, comingSoon])
+  const batchPriced = batchReady.length > 0 && batchReady.every(i => batchQuotes[i.id])
+  const batchTotal = batchReady.reduce((sum, i) => sum + Number(batchQuotes[i.id]?.total || 0), 0)
+
   // The artwork was judged against a size. Changing the size retires
   // the verdict — a file fine on a small print is refused across six
   // feet, and the server would refuse a stale token anyway.
@@ -198,7 +236,47 @@ export default function Specify() {
     setArtwork(null)
   }, [values])
 
+  // Each good file its own line, one after another. A line added stays
+  // added: if the connection drops halfway, Continue carries on with the
+  // rest, each with its own key so a retry is never a second copy.
+  async function handleBatchContinue(thenWhat) {
+    if (committing) return
+    setCommitting(true)
+    setProblem('')
+    let orderNumber = cart.saved?.order_number
+    let token = cart.saved?.access_token
+    let added = 0
+    for (const item of batchReady) {
+      try {
+        const { data } = await commitLine({
+          key: item.key, orderNumber, token,
+          serviceId: service.id,
+          quantity: Number(quantity) || 1,
+          specifications: values,
+          addons: addonsPayload,
+          artworkToken: item.result.token,
+        })
+        cart.adopt(data)
+        orderNumber = data?.order_number || orderNumber
+        token = data?.access_token || token
+        added += 1
+        setBatch(list => list.filter(i => i.id !== item.id))
+      } catch (err) {
+        setProblem(`${added ? `${added} added to your cart. ` : ''}${item.file.name}: ${
+          err.response?.data?.detail || 'couldn’t be added just now. Try again.'}`)
+        setCommitting(false)
+        return
+      }
+    }
+    toast.show(
+      `${added} file${added === 1 ? '' : 's'} added to your cart`,
+      'We’ll keep it for 7 days — pick up where you left off any time.',
+    )
+    navigate(thenWhat === 'checkout' ? '/checkout' : '/')
+  }
+
   async function handleContinue(thenWhat) {
+    if (batchMode) return handleBatchContinue(thenWhat)
     if (committing) return
 
     setCommitting(true)
@@ -288,16 +366,31 @@ export default function Specify() {
     !needsFile ||
     (artwork && artwork.verdict !== 'refuse' && artwork.token)
 
-  const canContinue = !comingSoon && !!quote && artworkReady && !committing
+  const canContinue = batchMode
+    ? !comingSoon && batchPriced && !batchBusy && !committing
+    : !comingSoon && !!quote && artworkReady && !committing
 
   const continueLabel =
-    comingSoon ? 'Coming soon'
+    batchMode ? (
+      comingSoon ? 'Coming soon'
+      : committing ? 'Adding…'
+      : batch.length === 0 ? 'Add your files to continue'
+      : batchBusy ? 'Checking your files…'
+      : !batchReady.length ? 'None of these can be printed'
+      : !batchPriced ? 'Working out the price…'
+      : 'Checkout'
+    )
+    : comingSoon ? 'Coming soon'
     : committing ? 'Adding…'
     : sizeMissing ? 'Enter the details to continue'
     : !quote ? 'Working out the price…'
     : needsFile && !artwork ? 'Upload artwork to continue'
     : needsFile && artwork?.verdict === 'refuse' ? 'Send different artwork'
     : 'Checkout'
+
+  // What the total shows: the files added up, or the one item.
+  const shownTotal = batchMode ? (batchPriced ? batchTotal.toFixed(2) : null) : (quote ? quote.total : null)
+  const copies = Number(quantity) || 1
 
   if (inApp) {
     return (
@@ -308,7 +401,7 @@ export default function Specify() {
           quote, pricing, problem, canContinue, committing, fromFile, pageCount, sheets,
           waitingForFile, chooseVariant, setField, clampField, setValues, stepQuantity,
           setQuantity, toggleAddon, packingFor, setPerCopy, handleContinue, cartCount: cart.count,
-          navigate,
+          navigate, batchMode, batch, setBatch, batchQuotes, batchReady, shownTotal, copies,
         }}
         continueLabel={continueLabel === 'Checkout' ? 'Continue' : continueLabel}
       />
@@ -581,14 +674,23 @@ export default function Specify() {
 
             {/* ── Then the artwork ─────────────────────────────── */}
 
-            {needsFile && !sizeMissing && !comingSoon && (
+            {needsFile && !sizeMissing && !comingSoon && (batchMode ? (
+              <div className="mt-5 pt-5 border-t border-rule">
+                <p className="text-[0.95rem] font-semibold">Your files</p>
+                <p className="mt-0.5 text-xs text-body">
+                  Each one is checked before you pay, and printed with the settings above.
+                </p>
+                <ArtworkBatch service={service} specifications={values} items={batch} setItems={setBatch}
+                              prices={Object.fromEntries(Object.entries(batchQuotes).map(([k, q]) => [k, q.total]))} />
+              </div>
+            ) : (
               <ArtworkUpload
                 service={service}
                 specifications={values}
                 result={artwork}
                 onResult={setArtwork}
               />
-            )}
+            ))}
 
             {needsFile && sizeMissing && !comingSoon && (
               <div className="mt-5 pt-5 border-t border-rule">
@@ -635,7 +737,7 @@ export default function Specify() {
 
             <div className="mt-5 rounded-xl border border-rule bg-substrate/40
                             px-4 py-3">
-              {quote?.addons?.length > 0 && (
+              {!batchMode && quote?.addons?.length > 0 && (
                 <div className="mb-2 pb-2 border-b border-rule space-y-1 text-xs text-body">
                   <div className="flex justify-between gap-3">
                     <span>{product.name}{variants.length > 1 ? ` · ${service.label}` : ''}</span>
@@ -652,7 +754,11 @@ export default function Specify() {
               <div className="sm:flex sm:items-center sm:justify-between sm:gap-4">
                 <div className="min-w-0">
                   <p className="text-[0.7rem] text-body">
-                    {comingSoon
+                    {batchMode && !comingSoon
+                      ? (batchReady.length
+                          ? `${batchReady.length} file${batchReady.length === 1 ? '' : 's'} · ${copies} ${unitWord(quantityField, copies)} each`
+                          : 'Add your files to see the total')
+                      : comingSoon
                       ? 'Not available to order yet'
                       : waitingForFile
                         ? `GHS ${service.price ?? '—'} per sheet · upload your file to see the total`
@@ -664,7 +770,7 @@ export default function Specify() {
                   </p>
                   <p className="text-xl font-extrabold tabular-nums transition-opacity"
                      style={{ opacity: pricing ? 0.45 : 1 }}>
-                    {quote ? `GHS ${quote.total}` : '—'}
+                    {shownTotal ? `GHS ${shownTotal}` : '—'}
                   </p>
                 </div>
 
@@ -806,6 +912,7 @@ function AppSpecify(p) {
     canContinue, continueLabel, fromFile, pageCount, sheets, waitingForFile, chooseVariant,
     setField, clampField, setValues, stepQuantity, setQuantity, toggleAddon, packingFor,
     setPerCopy, handleContinue, cartCount, navigate,
+    batchMode, batch, setBatch, batchQuotes, batchReady, shownTotal, copies,
   } = p
   const [breakdown, setBreakdown] = useState(false)
   const chips = specChips(product)
@@ -949,15 +1056,18 @@ function AppSpecify(p) {
           {/* ── Your file ── */}
           {needsFile && (
             <section className="mt-7">
-              <StepTitle n={++step} title="Your file" />
-              {sizeMissing ? (
+              <StepTitle n={++step} title={batchMode ? 'Your files' : 'Your file'} />
+              {batchMode ? (
+                <ArtworkBatch service={service} specifications={values} items={batch} setItems={setBatch}
+                              prices={Object.fromEntries(Object.entries(batchQuotes).map(([k, q]) => [k, q.total]))} />
+              ) : sizeMissing ? (
                 <p className="mt-2 text-sm text-body">Enter the size above, and we’ll check your file against it.</p>
               ) : (
                 <div className="-mt-3">
                   <ArtworkUpload service={service} specifications={values} result={artwork} onResult={setArtwork} />
                 </div>
               )}
-              {fromFile && pageCount && (
+              {!batchMode && fromFile && pageCount && (
                 <p className="mt-2 text-xs text-body">
                   {pageCount} page{pageCount === 1 ? '' : 's'} · {sheets} sheet{sheets === 1 ? '' : 's'} a copy
                 </p>
@@ -1065,7 +1175,17 @@ function AppSpecify(p) {
       <div className="fixed bottom-0 inset-x-0 z-30 bg-white rounded-t-3xl shadow-[0_-6px_24px_rgba(0,0,0,0.08)]"
            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         <div className="max-w-md mx-auto px-4 pt-3 pb-3">
-          {breakdown && quote && (
+          {breakdown && batchMode && batchReady.length > 0 && (
+            <div className="mb-2 pb-2 border-b border-[#ece9e3] space-y-1 text-xs text-body">
+              {batchReady.map(item => (
+                <div key={item.id} className="flex justify-between gap-3">
+                  <span className="truncate">{item.file.name}</span>
+                  <span className="tabular-nums shrink-0">{batchQuotes[item.id] ? `GHS ${batchQuotes[item.id].total}` : '…'}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {breakdown && !batchMode && quote && (
             <div className="mb-2 pb-2 border-b border-[#ece9e3] space-y-1 text-xs text-body">
               <div className="flex justify-between gap-3">
                 <span>{product.name}{variants.length > 1 ? ` · ${service.label}` : ''}</span>
@@ -1083,15 +1203,18 @@ function AppSpecify(p) {
             <div className="min-w-0">
               <p className="text-xs text-body">
                 {comingSoon ? 'Not available yet'
+                  : batchMode ? (batchReady.length
+                      ? `Total (${batchReady.length} file${batchReady.length === 1 ? '' : 's'} · ${copies} ${unit} each)`
+                      : 'Add your files to see the total')
                   : waitingForFile ? 'Upload your file to see the total'
                   : `Total (${Number(quantity) || 1} ${unit})`}
               </p>
               <p className="text-2xl font-extrabold text-farhat tabular-nums transition-opacity"
                  style={{ opacity: pricing ? 0.45 : 1 }}>
-                {quote ? `GHS ${quote.total}` : '—'}
+                {shownTotal ? `GHS ${shownTotal}` : '—'}
               </p>
             </div>
-            {quote && (
+            {(batchMode ? batchReady.length > 0 : quote) && (
               <button onClick={() => setBreakdown(b => !b)} aria-label="Show the breakdown"
                       className="w-9 h-9 grid place-items-center text-body">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
