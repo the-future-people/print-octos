@@ -13,6 +13,8 @@ import { useQuery } from '@tanstack/react-query'
 import { accountCode, accountOrders, accountUpdate, accountVerify } from '../api/client'
 import { useAccount } from '../lib/AccountContext.jsx'
 import Header from '../components/Header.jsx'
+import Details from '../components/Details.jsx'
+import { useToast } from '../lib/ToastContext.jsx'
 
 export default function Account() {
   const navigate = useNavigate()
@@ -30,17 +32,21 @@ export default function Account() {
         </button>
       ) : null} />
       <main className={`max-w-md mx-auto px-5 ${account ? 'pb-6' : 'py-8'}`}>
-        {!ready ? null : account ? <Signed account={account} /> : <SignIn />}
+        {!ready ? null
+          : !account ? <SignIn />
+          : account.profile && !account.profile.complete ? <Details account={account} />
+          : <Signed account={account} />}
       </main>
     </div>
   )
 }
 
+
 function SignIn() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const { signedIn } = useAccount()
-
+  const toast = useToast()
   const [step, setStep] = useState('phone')
   const [phone, setPhone] = useState('')
   const [sentTo, setSentTo] = useState('')
@@ -70,7 +76,12 @@ function SignIn() {
         device: navigator.userAgent.slice(0, 120),
       })
       await signedIn(data.token, data.account)
-      navigate(params.get('next') || '/', { replace: true })
+      // Someone the shop already knows goes straight in; anyone else
+      // stays here, where the short registration now shows.
+      if (data.account.profile?.complete !== false) {
+        toast.show(`Welcome back, ${data.account.first_name}`, 'Good to see you again.')
+        navigate(params.get('next') || '/', { replace: true })
+      }
     } catch (err) {
       setProblem(err.response?.data?.detail || 'That didn’t work. Check the code and try again.')
       setBusy(false)
