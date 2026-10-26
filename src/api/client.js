@@ -192,6 +192,8 @@ export const accountNotificationsRead = () =>
 
 export const accountUpdate = details =>
   client.patch('/api/v1/storefront/account/me/', details)
+export const accountRegister = details =>
+  client.post('/api/v1/storefront/account/register/', details)
 
 export const getRoute = (from, to, mode) =>
   client.get('/api/v1/storefront/route/', {
