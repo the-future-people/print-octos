@@ -5,8 +5,9 @@
 //
 // Personal or business first, because they are different customers:
 // a business's jobs are paid and receipted as the business. Then the
-// title (which suggests the gender), the names, and for a business its
-// name and where it is. The number is the one just verified.
+// title (which suggests the gender), the names, and for a business what
+// kind it is, its name, its phone and email, and where it is. The number
+// is the one just verified: for a business, the contact person's.
 
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -14,6 +15,11 @@ import { accountRegister } from '../api/client'
 import { useAccount } from '../lib/AccountContext.jsx'
 
 const GENDER_FROM_TITLE = { MR: 'MALE', MRS: 'FEMALE', MS: 'FEMALE' }
+const BUSINESS_TYPES = [
+  ['COMPANY', 'Company or shop'], ['SCHOOL', 'School'], ['CHURCH', 'Church or mosque'],
+  ['NGO', 'NGO or charity'], ['GOVT', 'Government office'],
+]
+const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 
 function Choice({ options, value, onChange }) {
   return (
@@ -42,13 +48,18 @@ export default function Details({ account }) {
   const [first, setFirst] = useState(p.first_name || account.first_name || '')
   const [last, setLast] = useState(p.last_name || '')
   const [business, setBusiness] = useState(p.business_name || '')
+  const [btype, setBtype] = useState(p.business_type || '')
+  const [bphone, setBphone] = useState(p.business_phone || '')
+  const [bemail, setBemail] = useState(p.business_email || '')
   const [address, setAddress] = useState(p.address || '')
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState('')
 
   const isBusiness = kind === 'BUSINESS'
   const ready = title && first.trim() && last.trim()
-    && (isBusiness ? business.trim() && address.trim() : gender)
+    && (isBusiness
+      ? business.trim() && btype && bphone.replace(/\D/g, '').length >= 9 && EMAIL.test(bemail.trim()) && address.trim()
+      : gender)
 
   function pickTitle(t) {
     setTitle(t)
@@ -60,12 +71,13 @@ export default function Details({ account }) {
     try {
       const { data } = await accountRegister({
         kind, title, gender, first_name: first.trim(), last_name: last.trim(),
-        business_name: business.trim(), address: address.trim(),
+        business_name: business.trim(), business_type: btype,
+        business_phone: bphone.trim(), business_email: bemail.trim(), address: address.trim(),
       })
       setAccount(data)
       navigate(params.get('next') || '/', { replace: true })
     } catch (err) {
-      setProblem(err.response?.data?.detail || 'That didn’t save. Try again in a moment.')
+      setProblem(err.response?.data?.detail || 'That didn\u2019t save. Try again in a moment.')
       setBusy(false)
     }
   }
@@ -87,10 +99,29 @@ export default function Details({ account }) {
       {isBusiness && (
         <>
           <label className="block mt-4">
+            <span className={label}>What kind of business?</span>
+            <select value={btype} onChange={e => setBtype(e.target.value)} className={input}>
+              <option value="" disabled>Choose…</option>
+              {BUSINESS_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </label>
+          <label className="block mt-3">
             <span className={label}>Business name</span>
             <input value={business} onChange={e => setBusiness(e.target.value)} autoComplete="organization"
                    placeholder="e.g. Piwak Construction Ltd" className={input} />
           </label>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className={label}>Business phone</span>
+              <input type="tel" inputMode="tel" value={bphone} onChange={e => setBphone(e.target.value)}
+                     placeholder="030 000 0000" className={input} />
+            </label>
+            <label className="block">
+              <span className={label}>Business email</span>
+              <input type="email" inputMode="email" autoComplete="email" value={bemail}
+                     onChange={e => setBemail(e.target.value)} placeholder="office@…" className={input} />
+            </label>
+          </div>
           <label className="block mt-3">
             <span className={label}>Where is it?</span>
             <input value={address} onChange={e => setAddress(e.target.value)} autoComplete="street-address"
@@ -128,7 +159,7 @@ export default function Details({ account }) {
 
       <button onClick={save} disabled={busy || !ready}
               className="mt-6 w-full px-4 py-3 rounded-lg bg-farhat text-white text-sm font-semibold disabled:opacity-40">
-        {busy ? 'Saving…' : 'Continue'}
+        {busy ? 'Saving\u2026' : 'Continue'}
       </button>
       {problem && <p className="mt-4 text-sm text-farhat">{problem}</p>}
     </div>
