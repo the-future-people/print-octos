@@ -210,4 +210,8 @@ export const commitBatch = ({ key, orderNumber, token, specifications, files }) 
     files,
   })
 
+  // A customer's year-end card, by the private code in their text.
+export const getYearCard = code =>
+  client.get(`/api/v1/storefront/y/${code}/`)
+
 export default client

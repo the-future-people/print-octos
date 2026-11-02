@@ -22,6 +22,7 @@ import { getCatalogue } from './api/client'
 import { rememberServerImages } from './lib/images'
 import Directions from './pages/Directions.jsx'
 import Board from './pages/Board.jsx'
+import YearCard from './pages/YearCard.jsx'
 
 export default function App() {
   // The opening animation, on top of the app while it loads. Only in the
@@ -91,6 +92,8 @@ export default function App() {
         <Route path="/paid" element={<Paid />} />
         {/* The link in the text message, traded for the real token. */}
         <Route path="/t/:code" element={<ShortLink />} />
+        {/* The year-end thank-you card, from the link in its text. */}
+        <Route path="/y/:code" element={<YearCard />} />
         <Route path="/directions" element={<Directions />} />
       </Routes>
       <TabBar />
