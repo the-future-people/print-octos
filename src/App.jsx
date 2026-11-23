@@ -23,10 +23,6 @@ import { rememberServerImages } from './lib/images'
 import Directions from './pages/Directions.jsx'
 import Board from './pages/Board.jsx'
 import YearCard from './pages/YearCard.jsx'
-// Farhat Trade Partners (23 Nov 2026): the portal for partner print shops.
-import PartnersHome from './partners/Home.jsx'
-import PartnerApply from './partners/Apply.jsx'
-import PartnerNewJob from './partners/NewJob.jsx'
 
 export default function App() {
   // The opening animation, on top of the app while it loads. Only in the
@@ -77,9 +73,6 @@ export default function App() {
     <AccountProvider>
       <Routes>
         <Route path="/" element={<Landing />} />
-        <Route path="/partners" element={<PartnersHome />} />
-        <Route path="/partners/apply" element={<PartnerApply />} />
-        <Route path="/partners/new" element={<PartnerNewJob />} />
         <Route path="/categories" element={<Categories />} />
         <Route path="/orders" element={<Orders />} />
         {/* More became the Account tab; old links still arrive. */}
